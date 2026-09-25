@@ -18,7 +18,9 @@ shared/   código usado pelo motor e pelo visualizador (sem dependências)
 engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 8080)
   src/index.ts     relógio real, persistência, rede, log de eventos
   src/simulacao.ts passo do mundo (agentes + animais + ecologia), estado v3, migração, censo, imigração
-  src/agente.ts    humanos: percepção, memória, decisão por utilidade, fuga de lobos, caça, carcaças
+  src/agente.ts    humanos: percepção com erro, avaliação por memória, decisão por utilidade, fuga, caça, navegação
+  src/memoria.ts   memória episódica, expectativa por semelhança, crenças refletidas no sono (inclusive erradas)
+  src/mapa.ts      mapa mental do terreno (grade de 5 m) e rota A* sobre o que o agente acredita saber
   src/corpo.ts     fisiologia humana: fome, sede, sono, energia, frio, dor, saúde, morte
   src/animal.ts    animais (sem LLM): corpo, emoções da espécie, memória associativa, fuga, caça, reprodução
   src/ecologia.ts  pasto e raízes em grade de 10 m, frutos (crescem e apodrecem), carcaças, marcas de cheiro dos lobos
@@ -45,7 +47,12 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 - O servidor é dono do tempo, do clima e dos agentes. O navegador nunca decide nada.
 - Tudo determinístico por `SEED` (mundo e clima); decisões dos agentes usam RNG com semente.
 - Acelerar o tempo roda vários passos de vida por tick (corpo, movimento e relógio aceleram juntos).
-- Agentes só sabem o que perceberam (visão ~30 m de dia, ~8 m à noite) e esquecem em ~5 dias sem rever.
+- Agentes só sabem o que perceberam: visão em cone (~120° andando, em volta parado), ~30 m de dia, ~8 m à noite,
+  menos na neblina, chuva e mata; audição de bichos se mexendo; de longe confundem espécies parecidas.
+  Lugares de recursos esquecem em ~5 dias sem rever; episódios esquecem conforme a importância.
+- Fase 7: perceber não é entender. O medo de uma espécie = instinto leve + expectativa das memórias (viés de
+  negatividade) + crenças. Crenças nascem na reflexão do sono e podem ser superstições; enfraquecem devagar.
+  O mapa mental supõe o desconhecido passável; esbarrar na água ensina (e a água aprendida não se desfaz).
 - Ações primitivas; comportamentos sociais devem emergir, nunca ser programados como comandos prontos.
 - Estado atual: 2 agentes provisórios (Aru e Nia), personagens são cápsulas até a Fase 4 (Blender).
 - Animais (Fase 6): coelhos (colônias, se escondem em arbustos, dormem na toca), cervos (manadas que migram atrás
@@ -67,13 +74,11 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 - Morte e extinção são resultados válidos. O observador não interfere na simulação oficial.
 
 ## Fases
-Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência, primeira versão).
-Em andamento: 6 (natureza, ecologia e animais) — falta validar um ano inteiro com as seis espécies.
-Próximas sugeridas: 7 (percepção/memória/aprendizado), 8 (emoções e personalidade), 4 (modelos Blender, em paralelo).
-Pendências da Fase 6: na validação de 1 ano a Nia morre de fome no inverno (dia ~316) com frutos no vale — investigar com
-`npm run validar -- 317 --rastrear Nia --desde 311` (determinístico; ~25 min, precisa de memória livre); cervos caem de ~20
-para ~6 ao longo do ano (migrantes agora chegam abaixo de 8); biomas.
-Navegação de verdade (contornar rios) e nojo (evitar carne estragada) ficam para a Fase 7/8.
+Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência), 6 (natureza, ecologia e animais),
+7 (percepção, memória e aprendizado — validado: os dois agentes atravessam um ano inteiro, inverno incluído).
+Próximas sugeridas: 8 (emoções e personalidade), 4 (modelos Blender, em paralelo).
+Pendências: cervos caem de ~24 para ~8 ao longo do ano (migrantes seguram abaixo de 8); javalis ainda investem
+contra humanos ~35 vezes por ano (quase sempre avisos, sem mortes); biomas. Nojo como emoção fica para a Fase 8.
 
 ## Git
 - Commitar direto no `main` ao final de cada desenvolvimento validado, com mensagem em português descrevendo o que mudou.
