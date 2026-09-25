@@ -90,7 +90,7 @@ export const PERFIS: Record<Especie, PerfilEspecie> = {
     gestacaoDias: 20, intervaloCriaDias: 300, ninhada: [1, 2], estacoesDeCria: ['Primavera'],
     densidadeMax: 12, grupoMax: 9, capacidade: 45,
     inicial: { grupos: 3, tamanho: [4, 6], distanciaDoInicio: 40 },
-    minimoRegional: 6,
+    minimoRegional: 8,
   },
   lobo: {
     nome: 'lobo', plural: 'lobos', dieta: 'carne', social: 'matilha',

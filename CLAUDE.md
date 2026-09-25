@@ -70,7 +70,9 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência, primeira versão).
 Em andamento: 6 (natureza, ecologia e animais) — falta validar um ano inteiro com as seis espécies.
 Próximas sugeridas: 7 (percepção/memória/aprendizado), 8 (emoções e personalidade), 4 (modelos Blender, em paralelo).
-Pendências da Fase 6: fome da Nia no outono (visto numa validação antiga), cervos que diminuem ao longo do ano; biomas.
+Pendências da Fase 6: na validação de 1 ano a Nia morre de fome no inverno (dia ~316) com frutos no vale — investigar com
+`npm run validar -- 317 --rastrear Nia --desde 311` (determinístico; ~25 min, precisa de memória livre); cervos caem de ~20
+para ~6 ao longo do ano (migrantes agora chegam abaixo de 8); biomas.
 Navegação de verdade (contornar rios) e nojo (evitar carne estragada) ficam para a Fase 7/8.
 
 ## Git
@@ -79,4 +81,4 @@ Navegação de verdade (contornar rios) e nojo (evitar carne estragada) ficam pa
 - `engine/data/` não é versionado (é o mundo do usuário).
 
 ## Como validar mudanças no motor
-Rodar `cd engine; npm run validar -- 60` (dias do mundo; ~4 s por dia com as seis espécies) e verificar se os agentes sobrevivem, se têm um ritmo diário plausível e se as populações de animais não explodem nem somem, antes de entregar. O script cria um mundo novo em memória e não toca em `data/`.
+Rodar `cd engine; npm run validar -- 60` (`--rastrear Nome --desde Dia` mostra um agente a cada meia hora) (dias do mundo; ~4 s por dia com as seis espécies) e verificar se os agentes sobrevivem, se têm um ritmo diário plausível e se as populações de animais não explodem nem somem, antes de entregar. O script cria um mundo novo em memória e não toca em `data/`.
