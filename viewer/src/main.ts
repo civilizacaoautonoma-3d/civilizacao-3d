@@ -7,7 +7,9 @@ import { SEED, WORLD_SIZE, WATER_LEVEL, heightAt, fbm, mulberry32, smooth,
          ARVORES, PEDRAS, PONTO_INICIAL, resolverColisao } from '../../shared/mundo';
 import type { MensagemServidor } from '../../shared/protocolo';
 import { criarArbustos, atualizarFrutos } from './arbustos';
-import { agentes, iniciarAgentes, aplicarEntidades, animarAgentes, atualizarPainel } from './agentes';
+import { agentes, iniciarAgentes, aplicarEntidades, animarAgentes } from './agentes';
+import { animais, iniciarAnimais, aplicarAnimais, animarAnimais, contarAnimais } from './animais';
+import { atualizarPainel } from './painel';
 
 const EYE_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.4;
@@ -193,6 +195,7 @@ const dummy = new THREE.Object3D();
 // ---------- Arbustos e agentes ----------
 criarArbustos(scene);
 iniciarAgentes(scene);
+iniciarAnimais(scene);
 
 // ---------- Conexão com o motor ----------
 const relogio = { msMundo: Date.now(), recebidoEm: performance.now(), velocidade: 1 };
@@ -210,6 +213,7 @@ function conectar() {
       relogio.recebidoEm = performance.now();
       relogio.velocidade = msg.velocidade;
       aplicarEntidades(msg.entidades);
+      aplicarAnimais(msg.animais ?? [], msg.carcacas ?? []);
       atualizarFrutos(msg.frutos);
     }
   };
@@ -222,7 +226,7 @@ const overlay = document.createElement('div');
 overlay.id = 'overlay';
 overlay.innerHTML = `<h1>PROJETO CIVILIZAÇÃO 3D</h1>
   <p>Clique para entrar</p>
-  <p>WASD mover · Mouse olhar · Shift correr · Espaço pular · T acelerar o tempo · Esc sair</p>`;
+  <p>WASD mover · Mouse olhar · Shift correr · Espaço pular · T acelerar o tempo · F ir até o próximo ser vivo · Esc sair</p>`;
 const crosshair = document.createElement('div');
 crosshair.id = 'crosshair';
 const info = document.createElement('div');
@@ -238,6 +242,7 @@ const keys = new Set<string>();
 window.addEventListener('keydown', e => {
   keys.add(e.code);
   if (e.code === 'KeyT' && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ tipo: 'alternar-velocidade' }));
+  if (e.code === 'KeyF') irAoProximo();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 
@@ -291,6 +296,31 @@ function updatePlayer(dt: number) {
 
   const bob = player.onGround && move.lengthSq() > 0 ? Math.sin(bobTime * 1.6) * 0.05 : 0;
   camera.position.set(player.pos.x, player.pos.y + EYE_HEIGHT + bob, player.pos.z);
+}
+
+// ---------- Encontrar os seres vivos (só o observador se move; a simulação não muda) ----------
+let proximoAlvo = 0;
+function irAoProximo() {
+  const alvos: THREE.Vector3[] = [...agentes.values()].map(v => v.grupo.position);
+  const bichos = [...animais.values()].map(v => v.grupo.position)
+    .sort((a, b) => a.distanceToSquared(player.pos) - b.distanceToSquared(player.pos));
+  alvos.push(...bichos);
+  if (!alvos.length) return;
+  const alvo = alvos[proximoAlvo++ % alvos.length];
+  // fica a 5 m do alvo, do lado de onde vem, e olha para ele
+  const dx = player.pos.x - alvo.x, dz = player.pos.z - alvo.z, d = Math.hypot(dx, dz) || 1;
+  player.pos.set(alvo.x + (dx / d) * 5, 0, alvo.z + (dz / d) * 5);
+  player.pos.y = Math.max(heightAt(player.pos.x, player.pos.z), WATER_LEVEL - 1.3);
+  player.vy = 0;
+  camera.position.set(player.pos.x, player.pos.y + EYE_HEIGHT, player.pos.z);
+  camera.lookAt(alvo.x, alvo.y + 0.6, alvo.z);
+}
+
+const ROSA = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
+function ondeEsta(p: THREE.Vector3) {
+  const dx = p.x - player.pos.x, dz = p.z - player.pos.z;
+  const ang = (Math.atan2(dx, -dz) * 180) / Math.PI;   // norte = -z
+  return `${Math.round(Math.hypot(dx, dz))} m ${ROSA[Math.round(((ang + 360) % 360) / 45) % 8]}`;
 }
 
 // ---------- Céu e clima a cada quadro ----------
@@ -382,15 +412,19 @@ function animate() {
 
   if (controls.isLocked) updatePlayer(dt);
   animarAgentes(dt);
+  animarAnimais(dt, camera);
   atualizarPainel(camera);
   const { tempo, clima } = updateSky(dt);
 
+  const bichos = contarAnimais();
   frames++; fpsTime += dt;
   if (fpsTime >= 0.5) { fps = Math.round(frames / fpsTime); frames = 0; fpsTime = 0; }
   info.innerHTML =
     `Ano ${tempo.ano} · Dia ${tempo.diaDoAno}/${TEMPO.DIAS_POR_ANO} · ${tempo.estacao} · ${pad(tempo.hora)}:${pad(tempo.minuto)}<br>` +
     `${clima.tipo} · ${clima.temperatura.toFixed(1)} °C · vento ${Math.round(clima.vento * 40)} km/h<br>` +
-    `Servidor ${conectado ? 'conectado' : 'desconectado'} · ${agentes.size} agentes · tempo ×${relogio.velocidade} (T) · FPS ${fps}`;
+    `Servidor ${conectado ? 'conectado' : 'desconectado'} · ${agentes.size} agentes · tempo ×${relogio.velocidade} (T) · FPS ${fps}<br>` +
+    `${bichos.coelho} coelhos · ${bichos.cervo} cervos · ${bichos.lobo} lobos · ${bichos.javali} javalis · ${bichos.ave} pássaros · ${bichos.peixe} peixes (F para ir até eles)<br>` +
+    [...agentes.values()].map(v => `${v.dados.nome}: ${ondeEsta(v.grupo.position)}`).join(' · ');
 
   renderer.render(scene, camera);
 }

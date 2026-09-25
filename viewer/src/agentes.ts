@@ -56,49 +56,12 @@ export function animarAgentes(dt: number) {
       const diff = ((v.dados.rotacao - v.grupo.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       v.grupo.rotation.y += diff * k;
     }
-    const inclinacao = deitado ? -Math.PI / 2 : acao === 'comendo' || acao === 'bebendo' ? 0.5 : 0;
+    const inclinacao = deitado ? -Math.PI / 2 : acao === 'comendo' || acao === 'bebendo' ? 0.5
+      : acao === 'correndo' ? 0.25 : acao === 'atacando' ? 0.45 : 0;
     v.pose.rotation.x += (inclinacao - v.pose.rotation.x) * k * 0.5;
     v.pose.position.y += ((deitado ? 0.3 : 0) - v.pose.position.y) * k * 0.5;
-    if (acao === 'andando') v.fase += dt * 8;
-    v.corpo.position.y = 0.8 + (acao === 'andando' ? Math.abs(Math.sin(v.fase)) * 0.04 : 0);
+    if (acao === 'andando' || acao === 'correndo') v.fase += dt * (acao === 'correndo' ? 14 : 8);
+    v.corpo.position.y = 0.8 + (acao === 'andando' ? Math.abs(Math.sin(v.fase)) * 0.04 : acao === 'correndo' ? Math.abs(Math.sin(v.fase)) * 0.09 : 0);
     if (acao === 'morto') v.pele.color.lerp(CINZA, k * 0.1);
   }
-}
-
-// ---------- Painel do agente que está na mira ----------
-const painel = document.createElement('div');
-painel.id = 'painel';
-document.body.append(painel);
-const direcao = new THREE.Vector3(), ate = new THREE.Vector3();
-let ultimoPainel = 0;
-
-const barra = (nome: string, valor: number, cor: string) =>
-  `<div class="linha"><span>${nome}</span><div class="barra"><div style="width:${Math.round(valor * 100)}%;background:${cor}"></div></div><b>${Math.round(valor * 100)}%</b></div>`;
-
-export function atualizarPainel(camera: THREE.Camera) {
-  const agora = performance.now();
-  if (agora - ultimoPainel < 150) return;
-  ultimoPainel = agora;
-
-  camera.getWorldDirection(direcao);
-  let alvo: AgenteVisual | null = null, melhor = 0.12;
-  for (const v of agentes.values()) {
-    ate.copy(v.grupo.position).setY(v.grupo.position.y + 1).sub(camera.position);
-    if (ate.length() > 30) continue;
-    const ang = ate.angleTo(direcao);
-    if (ang < melhor) { melhor = ang; alvo = v; }
-  }
-  if (!alvo) { painel.style.display = 'none'; return; }
-
-  const e = alvo.dados, n = e.necessidades;
-  painel.style.display = 'block';
-  painel.innerHTML = `<h3>${e.nome} <small>${e.sexo === 'M' ? 'homem' : 'mulher'}</small></h3>
-    <p class="intencao">${e.intencao}</p>
-    ${barra('Fome', n.fome, '#e0763c')}
-    ${barra('Sede', n.sede, '#3c9ee0')}
-    ${barra('Sono', n.sono, '#8b6fd6')}
-    ${barra('Energia', n.energia, '#e0c43c')}
-    ${barra('Saúde', n.saude, '#4cc46a')}
-    ${barra('Frio', n.frio, '#9ad4e8')}
-    <p class="memoria">Lembra de ${e.memoria.agua} lugar(es) com água e ${e.memoria.comida} arbusto(s)</p>`;
 }

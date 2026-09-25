@@ -1,9 +1,12 @@
 // Mensagens trocadas entre o motor (servidor) e o visualizador (navegador).
 
-export type Acao = 'parado' | 'andando' | 'comendo' | 'bebendo' | 'dormindo' | 'morto';
+import type { Especie } from './especies';
+
+export type Acao = 'parado' | 'andando' | 'correndo' | 'comendo' | 'bebendo' | 'dormindo'
+  | 'atacando' | 'escondido' | 'fucando' | 'morto';
 
 export interface Necessidades {
-  fome: number; sede: number; sono: number; energia: number; saude: number; frio: number;
+  fome: number; sede: number; sono: number; energia: number; saude: number; frio: number; dor: number;
 }
 
 export interface EntidadeRede {
@@ -11,13 +14,29 @@ export interface EntidadeRede {
   x: number; y: number; z: number; rotacao: number;
   acao: Acao; intencao: string;
   necessidades: Necessidades;
-  memoria: { agua: number; comida: number };
+  memoria: { agua: number; comida: number; carne: number };
+  caca: { tentativas: number; sucessos: number };
+}
+
+export interface AnimalRede {
+  id: string; especie: Especie; sexo: 'M' | 'F';
+  x: number; y: number; z: number; rotacao: number;
+  acao: Acao; intencao: string;
+  crescimento: number;   // 0 = recém-nascido, 1 = adulto
+  idadeDias: number;
+  necessidades: { fome: number; sede: number; sono: number; energia: number; saude: number; frio: number; gordura: number };
+  emocoes: Record<string, number>;
+}
+
+export interface CarcacaRede {
+  id: number; especie: Especie; x: number; y: number; z: number; rotacao: number;
+  porcoes: number; estragada: boolean;
 }
 
 export interface MsgBoasVindas { tipo: 'boas-vindas'; seed: number; ticksPorSegundo: number; modo: string }
 export interface MsgEstado {
   tipo: 'estado'; tick: number; msMundo: number; velocidade: number;
-  entidades: EntidadeRede[]; frutos: number[];
+  entidades: EntidadeRede[]; animais: AnimalRede[]; carcacas: CarcacaRede[]; frutos: number[];
 }
 export type MensagemServidor = MsgBoasVindas | MsgEstado;
 

@@ -13,15 +13,24 @@ Mundo 3D persistente em que agentes autônomos vivem, sobrevivem e formam uma ci
 shared/   código usado pelo motor e pelo visualizador (sem dependências)
   mundo.ts      geração determinística por SEED: relevo, árvores, pedras, arbustos, colisão
   clima.ts      relógio do mundo, estações, sol/lua, clima (não usa Three.js)
+  especies.ts   perfis das espécies (coelho, cervo, lobo, javali, pássaro, peixe): sentidos, instintos, clima, ciclo de vida
   protocolo.ts  mensagens WebSocket servidor <-> navegador
 engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 8080)
-  src/index.ts   loop de passo fixo (10 ticks/s), persistência, rede, log de eventos
-  src/agente.ts  percepção, memória, decisão por utilidade, execução de ações
-  src/corpo.ts   fisiologia: fome, sede, sono, energia, frio, saúde, morte
+  src/index.ts     relógio real, persistência, rede, log de eventos
+  src/simulacao.ts passo do mundo (agentes + animais + ecologia), estado v3, migração, censo, imigração
+  src/agente.ts    humanos: percepção, memória, decisão por utilidade, fuga de lobos, caça, carcaças
+  src/corpo.ts     fisiologia humana: fome, sede, sono, energia, frio, dor, saúde, morte
+  src/animal.ts    animais (sem LLM): corpo, emoções da espécie, memória associativa, fuga, caça, reprodução
+  src/ecologia.ts  pasto e raízes em grade de 10 m, frutos (crescem e apodrecem), carcaças, marcas de cheiro dos lobos
+  src/espaco.ts    utilidades de terreno e água compartilhadas
+  src/contexto.ts  o que cada ser recebe a cada passo
+  scripts/validar.ts  simulação sem interface: `npm run validar -- 60` (dias)
   data/          estado.json e eventos.log (ignorado no git; apagar = mundo novo)
 viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   src/main.ts    cena, céu, clima visual, jogador observador, conexão
-  src/agentes.ts malhas e poses dos agentes + painel de necessidades
+  src/agentes.ts malhas e poses dos agentes
+  src/animais.ts modelos provisórios dos animais e carcaças, animação de patas e poses
+  src/painel.ts  painel do agente ou animal na mira (necessidades e emoções)
   src/arbustos.ts arbustos e frutos
 ```
 
@@ -39,6 +48,17 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 - Agentes só sabem o que perceberam (visão ~30 m de dia, ~8 m à noite) e esquecem em ~5 dias sem rever.
 - Ações primitivas; comportamentos sociais devem emergir, nunca ser programados como comandos prontos.
 - Estado atual: 2 agentes provisórios (Aru e Nia), personagens são cápsulas até a Fase 4 (Blender).
+- Animais (Fase 6): coelhos (colônias, se escondem em arbustos, dormem na toca), cervos (manadas que migram atrás
+  de pasto; machos disputam a manada na época de cria), lobos (matilha crepuscular, só a fêmea dominante cria,
+  caçam em grupo, vencem pelo cansaço, marcam e defendem território, expulsam solitários), javalis (onívoros:
+  fuçam raízes, comem frutos e carcaças, investem quando encurralados ou defendendo filhotes — uma investida e recuam),
+  pássaros (voam, dormem empoleirados, alarme alerta todas as espécies), peixes (cardume na água funda, fogem de movimento).
+  Todos sentem frio pela pelagem, se abrigam da chuva, dormem amontoados, engordam no outono e amamentam.
+  Medo de humanos é aprendido por indivíduo: habituação lenta, sensibilização com um único ataque;
+  filhotes herdam lugares e medos da mãe; o bando foge junto (contágio só de quem viu a ameaça).
+- Limites do vale por espécie (`capacidade`) e chegada rara de migrantes pelas bordas quando uma espécie quase some.
+- Humanos: medo instintivo de lobos e de javali bravo, caçam só se a experiência própria com aquela espécie diz que vale,
+  comem carne de carcaças; carne estragada (>36 h) faz mal. Lobos só atacam humanos dormindo/feridos, com muita fome e em matilha.
 
 ## Princípios (da documentação)
 - Regras mínimas, consequências reais. Nada social pré-definido (sem profissões, dinheiro, leis).
@@ -48,7 +68,14 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 
 ## Fases
 Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência, primeira versão).
-Próximas sugeridas: 6 (ecologia e animais), 7 (percepção/memória/aprendizado), 8 (emoções e personalidade), 4 (modelos Blender, em paralelo).
+Em andamento: 6 (natureza, ecologia e animais) — falta validar um ano inteiro com as seis espécies.
+Próximas sugeridas: 7 (percepção/memória/aprendizado), 8 (emoções e personalidade), 4 (modelos Blender, em paralelo).
+Pendências da Fase 6: fome da Nia no outono (visto numa validação antiga), cervos que diminuem ao longo do ano; biomas.
+Navegação de verdade (contornar rios) e nojo (evitar carne estragada) ficam para a Fase 7/8.
+
+## Git
+- Commitar cada mudança validada direto no `main`, com mensagem em português descrevendo o que mudou.
+- `engine/data/` não é versionado (é o mundo do usuário).
 
 ## Como validar mudanças no motor
-Rodar uma simulação sem interface por vários dias do mundo (script com tsx importando `engine/src/agente.ts` e `shared/*`) e verificar se os agentes sobrevivem e têm um ritmo diário plausível antes de entregar.
+Rodar `cd engine; npm run validar -- 60` (dias do mundo; ~4 s por dia com as seis espécies) e verificar se os agentes sobrevivem, se têm um ritmo diário plausível e se as populações de animais não explodem nem somem, antes de entregar. O script cria um mundo novo em memória e não toca em `data/`.

@@ -1,58 +1,43 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
-import { SEED, PONTO_INICIAL, ARBUSTOS, mulberry32 } from '../../shared/mundo';
+import { SEED, mulberry32 } from '../../shared/mundo';
 import { estadoDoCeu, tempoDoMundo, TEMPO } from '../../shared/clima';
-import type { EntidadeRede, MensagemCliente, MensagemServidor } from '../../shared/protocolo';
-import { atualizarAgente, novoAgente, type Agente, type Contexto } from './agente';
+import type { MensagemCliente, MensagemServidor } from '../../shared/protocolo';
+import { DT, TICKS_POR_SEGUNDO, censo, horaDoMundo, migrar, mundoNovo, passoDoMundo, retrato, type Estado } from './simulacao';
 
 // ---------- Configuração ----------
 const PORTA = Number(process.env.PORTA ?? 8080);
 const MODO = process.env.MODO ?? 'dev';
-const TICKS_POR_SEGUNDO = 10;
-const DT = 1 / TICKS_POR_SEGUNDO;
 const VELOCIDADES = [1, 4, 15, 60];                           // ×60: 1 dia do mundo = 24 segundos
-const HORAS_POR_PASSO = (DT * 24) / TEMPO.HORAS_REAIS_POR_DIA / 3600;
 const PASTA = path.resolve('data');
 const ARQUIVO = path.join(PASTA, 'estado.json');
 const EVENTOS = path.join(PASTA, 'eventos.log');
-const FATOR_ESTACAO = { 'Primavera': 1, 'Verão': 1.4, 'Outono': 0.8, 'Inverno': 0.3 } as const;
 
 // ---------- Estado ----------
-interface EstadoSalvo {
-  versao: 2; tick: number; deslocamentoMs: number; velocidadeIdx: number;
-  agentes: Agente[]; frutos: number[]; criadoEm?: number;
-}
+// cada mundo começa no Dia 1 às 06:00, no momento em que foi criado
+const msMundoDe = (e: { criadoEm?: number; deslocamentoMs: number }) =>
+  TEMPO.INICIO_DO_MUNDO + (Date.now() - (e.criadoEm ?? TEMPO.INICIO_DO_MUNDO)) + e.deslocamentoMs;
 
-function mundoNovo(): EstadoSalvo {
-  console.log('Criando um mundo novo.');
-  return {
-    versao: 2, tick: 0, deslocamentoMs: 0, velocidadeIdx: 0,
-    criadoEm: Date.now(),
-    agentes: [
-      novoAgente('ag_001', 'Aru', 'M', PONTO_INICIAL.x + 5, PONTO_INICIAL.z + 2),
-      novoAgente('ag_002', 'Nia', 'F', PONTO_INICIAL.x + 6, PONTO_INICIAL.z - 2),
-    ],
-    frutos: ARBUSTOS.map(b => Math.ceil(b.max / 2)),
-  };
-}
-
-function carregar(): EstadoSalvo {
+function carregar(): Estado {
   try {
-    const e = JSON.parse(fs.readFileSync(ARQUIVO, 'utf8')) as EstadoSalvo;
-    if (e.versao === 2) { console.log(`Estado carregado (tick ${e.tick}).`); return e; }
+    const dados = JSON.parse(fs.readFileSync(ARQUIVO, 'utf8'));
+    const versaoAntiga = dados.versao;
+    const e = migrar(dados, horaDoMundo(msMundoDe(dados)), mulberry32(SEED * 17 + (dados.tick ?? 0)));
+    if (e) {
+      console.log(versaoAntiga === 3 ? `Estado carregado (tick ${e.tick}).`
+        : `Estado da versão ${versaoAntiga} atualizado: os animais chegaram ao vale (tick ${e.tick}).`);
+      return e;
+    }
     console.log('O estado salvo é de uma versão antiga.');
   } catch { /* primeira execução */ }
-  return mundoNovo();
+  console.log('Criando um mundo novo.');
+  return mundoNovo(Date.now(), mulberry32(SEED * 17));
 }
 
 const estado = carregar();
 if (estado.velocidadeIdx >= VELOCIDADES.length) estado.velocidadeIdx = 0;
-const criadoEm = estado.criadoEm ?? TEMPO.INICIO_DO_MUNDO;   // mundos antigos continuam de onde estavam
-estado.criadoEm = criadoEm;
-
-// cada mundo começa no Dia 1 às 06:00, no momento em que foi criado
-const msMundo = () => TEMPO.INICIO_DO_MUNDO + (Date.now() - criadoEm) + estado.deslocamentoMs;
+const msMundo = () => msMundoDe(estado);
 
 function salvar() {
   fs.mkdirSync(PASTA, { recursive: true });
@@ -77,29 +62,8 @@ function registrar(texto: string) {
 const aleatorio = mulberry32(SEED * 31 + estado.tick);
 
 function passo() {
-  estado.tick++;
   const vel = VELOCIDADES[estado.velocidadeIdx];
-  const ceu = estadoDoCeu(msMundo(), SEED);
-  const horaBase = ceu.tempo.diasTotais * 24;
-  const base = {
-    horas: HORAS_POR_PASSO, dt: DT, luz: ceu.luzDoDia, noite: ceu.luzDoDia < 0.15,
-    temperatura: ceu.clima.temperatura, chuva: ceu.clima.chuva, vento: ceu.clima.vento,
-    frutos: estado.frutos, agentes: estado.agentes, rand: aleatorio,
-    evento: (a: Agente, t: string) => registrar(`${a.nome} ${t}`),
-  };
-
-  // com o tempo acelerado, roda vários passos de vida por tick
-  for (let s = 0; s < vel; s++) {
-    const ctx: Contexto = { ...base, hora: horaBase + s * HORAS_POR_PASSO };
-    for (const a of estado.agentes) atualizarAgente(a, ctx);
-  }
-
-  // frutos crescem de novo (mais no verão, quase nada no inverno)
-  const horas = vel * HORAS_POR_PASSO, fator = FATOR_ESTACAO[ceu.tempo.estacao];
-  ARBUSTOS.forEach((b, i) => {
-    if (estado.frutos[i] < b.max && aleatorio() < (horas / 8) * fator) estado.frutos[i]++;
-  });
-
+  passoDoMundo(estado, msMundo(), vel, aleatorio, registrar);
   estado.deslocamentoMs += DT * 1000 * (vel - 1);
 }
 
@@ -120,27 +84,9 @@ wss.on('connection', ws => {
   });
 });
 
-const r2 = (v: number) => Math.round(v * 100) / 100;
-const paraRede = (a: Agente): EntidadeRede => ({
-  id: a.id, nome: a.nome, sexo: a.sexo, x: a.x, y: a.y, z: a.z, rotacao: a.rotacao,
-  acao: a.acao, intencao: a.intencao,
-  necessidades: {
-    fome: r2(a.corpo.fome), sede: r2(a.corpo.sede), sono: r2(a.corpo.sono),
-    energia: r2(a.corpo.energia), saude: r2(a.corpo.saude), frio: r2(a.corpo.frio),
-  },
-  memoria: {
-    agua: a.memoria.filter(m => m.tipo === 'agua').length,
-    comida: a.memoria.filter(m => m.tipo === 'comida').length,
-  },
-});
-
 function transmitir() {
-  const msg: MensagemServidor = {
-    tipo: 'estado', tick: estado.tick, msMundo: msMundo(),
-    velocidade: VELOCIDADES[estado.velocidadeIdx],
-    entidades: estado.agentes.map(paraRede), frutos: estado.frutos,
-  };
-  const texto = JSON.stringify(msg);
+  if (wss.clients.size === 0) return;
+  const texto = JSON.stringify(retrato(estado, msMundo(), VELOCIDADES[estado.velocidadeIdx]));
   for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(texto);
 }
 
@@ -163,6 +109,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 setInterval(() => {
   const c = estadoDoCeu(msMundo(), SEED).clima;
   console.log(`[${carimbo()}] tick ${estado.tick} · ${c.tipo} ${c.temperatura.toFixed(1)} °C · ${wss.clients.size} observadores`);
+  console.log(`   ${censo(estado)}`);
   for (const a of estado.agentes) {
     const n = a.corpo;
     console.log(`   ${a.nome}: ${a.intencao} · fome ${pct(n.fome)} · sede ${pct(n.sede)} · sono ${pct(n.sono)} · ` +

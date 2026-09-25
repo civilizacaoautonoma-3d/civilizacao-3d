@@ -88,8 +88,28 @@ for (let t = 0; PEDRAS.length < 250 && t < 5000; t++) {
 
 export const OBSTACULOS: Obstaculo[] = [...ARVORES, ...PEDRAS];
 
+// grade espacial: cada consulta só olha os obstáculos das células vizinhas
+const CELULA_OBS = 8;
+const gradeObs = new Map<number, Obstaculo[]>();
+const chaveObs = (cx: number, cz: number) => (cx + 1000) * 4096 + (cz + 1000);
+for (const o of OBSTACULOS) {
+  const k = chaveObs(Math.floor(o.x / CELULA_OBS), Math.floor(o.z / CELULA_OBS));
+  const lista = gradeObs.get(k);
+  if (lista) lista.push(o); else gradeObs.set(k, [o]);
+}
+
+export function obstaculosPerto(x: number, z: number): Obstaculo[] {
+  const cx = Math.floor(x / CELULA_OBS), cz = Math.floor(z / CELULA_OBS);
+  const r: Obstaculo[] = [];
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+    const lista = gradeObs.get(chaveObs(cx + i, cz + j));
+    if (lista) r.push(...lista);
+  }
+  return r;
+}
+
 export function resolverColisao(p: { x: number; z: number }, raio: number) {
-  for (const o of OBSTACULOS) {
+  for (const o of obstaculosPerto(p.x, p.z)) {
     const dx = p.x - o.x, dz = p.z - o.z;
     const d = Math.hypot(dx, dz), min = o.r + raio;
     if (d < min && d > 1e-4) {
