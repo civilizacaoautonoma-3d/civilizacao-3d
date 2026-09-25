@@ -21,3 +21,18 @@ canvas { display: block; }
   background: rgba(0, 0, 0, 0.35); padding: 6px 10px; border-radius: 6px;
   pointer-events: none; font-family: Consolas, monospace;
 }
+
+#painel {
+  position: fixed; right: 12px; top: 12px; width: 240px; display: none;
+  color: #fff; background: rgba(10, 14, 20, 0.72); border-radius: 10px;
+  padding: 12px 14px; font-size: 12px; pointer-events: none;
+}
+#painel h3 { font-size: 15px; margin-bottom: 4px; }
+#painel small { font-weight: normal; opacity: 0.7; }
+#painel .intencao { margin-bottom: 8px; font-style: italic; opacity: 0.9; }
+#painel .linha { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+#painel .linha span { width: 52px; }
+#painel .linha b { width: 34px; text-align: right; font-weight: normal; }
+#painel .barra { flex: 1; height: 7px; background: rgba(255, 255, 255, 0.15); border-radius: 4px; overflow: hidden; }
+#painel .barra div { height: 100%; }
+#painel .memoria { margin-top: 8px; opacity: 0.75; }

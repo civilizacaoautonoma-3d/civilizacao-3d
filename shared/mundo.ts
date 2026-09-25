@@ -1,5 +1,5 @@
 // Geração determinística do mundo: a mesma semente produz o mesmo terreno,
-// as mesmas árvores e as mesmas pedras no servidor e no navegador.
+// as mesmas árvores, pedras e arbustos no servidor e no navegador.
 
 export const SEED = 42;
 export const WORLD_SIZE = 400;
@@ -96,5 +96,23 @@ export function resolverColisao(p: { x: number; z: number }, raio: number) {
       p.x = o.x + (dx / d) * min;
       p.z = o.z + (dz / d) * min;
     }
+  }
+}
+
+// ---------- Arbustos com frutos (gerador próprio: não altera árvores e pedras) ----------
+export interface Arbusto { x: number; z: number; h: number; max: number }
+export const ARBUSTOS: Arbusto[] = [];
+{
+  const r = mulberry32(SEED + 1000);
+  const livre = (x: number, z: number) => OBSTACULOS.every(o => Math.hypot(o.x - x, o.z - z) > o.r + 1.2);
+  // alguns perto do ponto inicial, para os primeiros dias
+  for (let t = 0; ARBUSTOS.length < 6 && t < 2000; t++) {
+    const ang = r() * Math.PI * 2, d = 12 + r() * 20;
+    const x = PONTO_INICIAL.x + Math.cos(ang) * d, z = PONTO_INICIAL.z + Math.sin(ang) * d, h = heightAt(x, z);
+    if (h > 1 && h < 12 && livre(x, z)) ARBUSTOS.push({ x, z, h, max: 4 + Math.floor(r() * 4) });
+  }
+  for (let t = 0; ARBUSTOS.length < 80 && t < 8000; t++) {
+    const x = (r() - 0.5) * (WORLD_SIZE - 30), z = (r() - 0.5) * (WORLD_SIZE - 30), h = heightAt(x, z);
+    if (h > 1.5 && h < 12 && livre(x, z)) ARBUSTOS.push({ x, z, h, max: 4 + Math.floor(r() * 4) });
   }
 }

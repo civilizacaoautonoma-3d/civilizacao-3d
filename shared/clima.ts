@@ -1,13 +1,13 @@
 // Relógio e clima do mundo.
-// Este arquivo não usa Three.js de propósito: na Fase 2 ele vai para o motor
-// de simulação no servidor, que passa a ser o dono do tempo e do clima.
+// Este arquivo não usa Three.js de propósito: é usado pelo motor (servidor),
+// que é o dono do tempo, e pelo visualizador (navegador), que só desenha.
 
 export const TEMPO = {
-  HORAS_REAIS_POR_DIA: 4,                             // 1 dia simulado = 4 horas reais
+  HORAS_REAIS_POR_DIA: 0.4,                           // 1 dia do mundo = 24 minutos reais (1 min = 1 h)
   DIAS_POR_ANO: 365,
-  INICIO_DO_MUNDO: Date.UTC(2026, 8, 25, 12, 0, 0),  // 25/09/2026 09:00 (Brasília)
+  INICIO_DO_MUNDO: Date.UTC(2026, 8, 25, 12, 0, 0),  // referência fixa do calendário
   HORA_INICIAL: 6,                                    // o mundo nasce ao amanhecer
-  HORAS_POR_BLOCO_DE_CLIMA: 6,                        // o clima muda a cada 6 h simuladas
+  HORAS_POR_BLOCO_DE_CLIMA: 6,                        // o clima muda a cada 6 h do mundo
 };
 
 export type Estacao = 'Primavera' | 'Verão' | 'Outono' | 'Inverno';
@@ -47,7 +47,7 @@ export function tempoDoMundo(msReal: number): TempoDoMundo {
   const diasTotais = Math.max(0, msReal - TEMPO.INICIO_DO_MUNDO) / MS_POR_DIA + TEMPO.HORA_INICIAL / 24;
   const diaDoAnoF = diasTotais % TEMPO.DIAS_POR_ANO;
   const horaDecimal = (diasTotais % 1) * 24;
-  const duracaoDoDia = 12 + 2.5 * Math.sin(anguloDoAno(diasTotais)); // dias longos no verão
+  const duracaoDoDia = 12; // 12 h de sol e 12 h de noite o ano todo
   return {
     diasTotais,
     ano: Math.floor(diasTotais / TEMPO.DIAS_POR_ANO) + 1,
@@ -86,11 +86,11 @@ const MODELOS: Record<TipoClima, ClimaBase> = {
 function climaDoBloco(bloco: number, semente: number): ClimaBase {
   const dia = ((bloco + 0.5) * TEMPO.HORAS_POR_BLOCO_DE_CLIMA) / 24;
   const e = Math.floor((dia % TEMPO.DIAS_POR_ANO) / DIAS_POR_ESTACAO) % 4;
-  const chanceChuva = [0.3, 0.45, 0.25, 0.15][e];   // primavera, verão, outono, inverno
-  const chanceNeblina = [0.1, 0.05, 0.15, 0.3][e];
+  const chanceChuva = [0.12, 0.18, 0.1, 0.06][e];   // primavera, verão, outono, inverno
+  const chanceNeblina = [0.05, 0.03, 0.07, 0.12][e];
   const r = aleatorio(semente * 7919 + bloco);
   const r2 = aleatorio(semente * 104729 + bloco * 3 + 1);
-  if (r < chanceChuva * 0.3) return MODELOS['Tempestade'];
+  if (r < chanceChuva * 0.2) return MODELOS['Tempestade'];
   if (r < chanceChuva) return MODELOS['Chuva'];
   if (r2 < chanceNeblina) return MODELOS['Neblina'];
   if (r < chanceChuva + 0.2) return MODELOS['Nublado'];

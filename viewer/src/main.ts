@@ -5,7 +5,9 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { estadoDoCeu, TEMPO } from '../../shared/clima';
 import { SEED, WORLD_SIZE, WATER_LEVEL, heightAt, fbm, mulberry32, smooth,
          ARVORES, PEDRAS, PONTO_INICIAL, resolverColisao } from '../../shared/mundo';
-import type { EntidadeRede, MensagemServidor } from '../../shared/protocolo';
+import type { MensagemServidor } from '../../shared/protocolo';
+import { criarArbustos, atualizarFrutos } from './arbustos';
+import { agentes, iniciarAgentes, aplicarEntidades, animarAgentes, atualizarPainel } from './agentes';
 
 const EYE_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.4;
@@ -188,51 +190,9 @@ const dummy = new THREE.Object3D();
   scene.add(rocks);
 }
 
-// ---------- Agentes (controlados pelo servidor) ----------
-interface AgenteVisual { grupo: THREE.Group; corpo: THREE.Mesh; alvo: THREE.Vector3; rot: number; acao: string; fase: number }
-const agentes = new Map<string, AgenteVisual>();
-
-function criarAgente(e: EntidadeRede): AgenteVisual {
-  const pele = new THREE.MeshStandardMaterial({ color: e.sexo === 'M' ? 0xb07850 : 0xd09a74 });
-  const corpo = new THREE.Mesh(new THREE.CapsuleGeometry(e.sexo === 'M' ? 0.3 : 0.26, e.sexo === 'M' ? 1.05 : 0.95, 4, 8), pele);
-  corpo.position.y = 0.8;
-  const cabeca = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), pele);
-  cabeca.position.y = 1.72;
-  const nariz = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.1), pele);   // indica a frente
-  nariz.position.set(0, 1.72, 0.2);
-  corpo.castShadow = cabeca.castShadow = true;
-  const grupo = new THREE.Group();
-  grupo.add(corpo, cabeca, nariz);
-  grupo.position.set(e.x, e.y, e.z);
-  grupo.rotation.y = e.rotacao;
-  scene.add(grupo);
-  const v: AgenteVisual = { grupo, corpo, alvo: new THREE.Vector3(e.x, e.y, e.z), rot: e.rotacao, acao: e.acao, fase: 0 };
-  agentes.set(e.id, v);
-  return v;
-}
-
-function aplicarEntidades(lista: EntidadeRede[]) {
-  const vivos = new Set<string>();
-  for (const e of lista) {
-    vivos.add(e.id);
-    const v = agentes.get(e.id) ?? criarAgente(e);
-    v.alvo.set(e.x, e.y, e.z);
-    v.rot = e.rotacao;
-    v.acao = e.acao;
-  }
-  for (const [id, v] of agentes) if (!vivos.has(id)) { scene.remove(v.grupo); agentes.delete(id); }
-}
-
-function animarAgentes(dt: number) {
-  const k = 1 - Math.exp(-dt * 10);
-  for (const v of agentes.values()) {
-    v.grupo.position.lerp(v.alvo, k);
-    const diff = ((v.rot - v.grupo.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-    v.grupo.rotation.y += diff * k;
-    if (v.acao === 'andando') v.fase += dt * 8;
-    v.corpo.position.y = 0.8 + (v.acao === 'andando' ? Math.abs(Math.sin(v.fase)) * 0.04 : 0);
-  }
-}
+// ---------- Arbustos e agentes ----------
+criarArbustos(scene);
+iniciarAgentes(scene);
 
 // ---------- Conexão com o motor ----------
 const relogio = { msMundo: Date.now(), recebidoEm: performance.now(), velocidade: 1 };
@@ -250,6 +210,7 @@ function conectar() {
       relogio.recebidoEm = performance.now();
       relogio.velocidade = msg.velocidade;
       aplicarEntidades(msg.entidades);
+      atualizarFrutos(msg.frutos);
     }
   };
 }
@@ -335,9 +296,9 @@ function updatePlayer(dt: number) {
 // ---------- Céu e clima a cada quadro ----------
 const sunDir = new THREE.Vector3(), moonDir = new THREE.Vector3();
 const C = {
-  fogDay: new THREE.Color(0xcfe3f0), fogCloudy: new THREE.Color(0x9aa3ab), fogNight: new THREE.Color(0x0b1020),
+  fogDay: new THREE.Color(0xcfe3f0), fogCloudy: new THREE.Color(0x9aa3ab), fogNight: new THREE.Color(0x1c2744),
   sunLow: new THREE.Color(0xffa060), sunHigh: new THREE.Color(0xfff1d6), moonLight: new THREE.Color(0x8fa8ff),
-  hemiSkyDay: new THREE.Color(0xbfd8ff), hemiSkyNight: new THREE.Color(0x1a2440),
+  hemiSkyDay: new THREE.Color(0xbfd8ff), hemiSkyNight: new THREE.Color(0x3a4a78),
   hemiGroundDay: new THREE.Color(0x4a5a2a), hemiGroundNight: new THREE.Color(0x0a0a08),
 };
 const dayFog = new THREE.Color();
@@ -360,20 +321,21 @@ function updateSky(dt: number) {
   if (clima.tempestade > 0.5 && Math.random() < dt * 0.25) lightning = 1;
   lightning = Math.max(0, lightning - dt * 5);
 
-  renderer.toneMappingExposure = lerp(0.3, 0.6, day) * (1 - 0.3 * clima.nuvens) + lightning * 0.8;
+  // noite mais clara: exposição mínima maior
+  renderer.toneMappingExposure = lerp(0.45, 0.6, day) * (1 - 0.3 * clima.nuvens) + lightning * 0.8;
 
   const lightDir = sol.elevacao > -2 ? sunDir : moonDir;
   if (sol.elevacao > -2) {
     sunLight.intensity = 2.4 * smooth(clamp01(sol.elevacao / 10)) * (1 - 0.75 * clima.nuvens);
     sunLight.color.copy(C.sunLow).lerp(C.sunHigh, clamp01(sol.elevacao / 25));
   } else {
-    sunLight.intensity = 0.35 * (1 - 0.7 * clima.nuvens) * clamp01(lua.elevacao / 10);
+    sunLight.intensity = 0.8 * (1 - 0.5 * clima.nuvens) * Math.max(0.4, clamp01(lua.elevacao / 10));
     sunLight.color.copy(C.moonLight);
   }
   sunLight.position.copy(player.pos).addScaledVector(lightDir, 150);
   sunLight.target.position.copy(player.pos);
 
-  hemi.intensity = lerp(0.1, 0.75, day) * (1 - 0.25 * clima.nuvens) + lightning * 3;
+  hemi.intensity = lerp(0.35, 0.75, day) * (1 - 0.25 * clima.nuvens) + lightning * 3;
   hemi.color.copy(C.hemiSkyNight).lerp(C.hemiSkyDay, day);
   hemi.groundColor.copy(C.hemiGroundNight).lerp(C.hemiGroundDay, day);
 
@@ -391,7 +353,7 @@ function updateSky(dt: number) {
   cloudMap.offset.set(cloudDrift, cloudDrift * 0.4);
   clouds.position.set(camera.position.x, camera.position.y + 140, camera.position.z);
   cloudMat.opacity = clamp01(clima.nuvens * 1.1);
-  cloudMat.color.setScalar(lerp(0.12, 1, day) * (1 - 0.45 * clima.chuva) + lightning);
+  cloudMat.color.setScalar(lerp(0.25, 1, day) * (1 - 0.45 * clima.chuva) + lightning);
 
   const active = Math.floor(DROPS * clima.chuva);
   rain.visible = active > 0;
@@ -420,6 +382,7 @@ function animate() {
 
   if (controls.isLocked) updatePlayer(dt);
   animarAgentes(dt);
+  atualizarPainel(camera);
   const { tempo, clima } = updateSky(dt);
 
   frames++; fpsTime += dt;

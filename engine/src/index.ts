@@ -1,93 +1,106 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
-import { SEED, WORLD_SIZE, WATER_LEVEL, PONTO_INICIAL, heightAt, mulberry32, resolverColisao } from '../../shared/mundo';
-import { tempoDoMundo } from '../../shared/clima';
-import type { Acao, EntidadeRede, MensagemCliente, MensagemServidor } from '../../shared/protocolo';
+import { SEED, PONTO_INICIAL, ARBUSTOS, mulberry32 } from '../../shared/mundo';
+import { estadoDoCeu, tempoDoMundo, TEMPO } from '../../shared/clima';
+import type { EntidadeRede, MensagemCliente, MensagemServidor } from '../../shared/protocolo';
+import { atualizarAgente, novoAgente, type Agente, type Contexto } from './agente';
 
 // ---------- Configuração ----------
 const PORTA = Number(process.env.PORTA ?? 8080);
-const MODO = process.env.MODO ?? 'dev';          // 'dev' permite acelerar o tempo
+const MODO = process.env.MODO ?? 'dev';
 const TICKS_POR_SEGUNDO = 10;
 const DT = 1 / TICKS_POR_SEGUNDO;
-const VELOCIDADES = [1, 60, 600, 3600];
-const ARQUIVO = path.resolve('data', 'estado.json');
-const LIMITE = WORLD_SIZE / 2 - 8;
+const VELOCIDADES = [1, 4, 15, 60];                           // ×60: 1 dia do mundo = 24 segundos
+const HORAS_POR_PASSO = (DT * 24) / TEMPO.HORAS_REAIS_POR_DIA / 3600;
+const PASTA = path.resolve('data');
+const ARQUIVO = path.join(PASTA, 'estado.json');
+const EVENTOS = path.join(PASTA, 'eventos.log');
+const FATOR_ESTACAO = { 'Primavera': 1, 'Verão': 1.4, 'Outono': 0.8, 'Inverno': 0.3 } as const;
 
 // ---------- Estado ----------
-interface Agente {
-  id: string; nome: string; sexo: 'M' | 'F';
-  x: number; y: number; z: number; rotacao: number; acao: Acao;
-  alvo: { x: number; z: number } | null; espera: number; travado: number;
+interface EstadoSalvo {
+  versao: 2; tick: number; deslocamentoMs: number; velocidadeIdx: number;
+  agentes: Agente[]; frutos: number[]; criadoEm?: number;
 }
-interface EstadoSalvo { versao: 1; tick: number; deslocamentoMs: number; velocidadeIdx: number; agentes: Agente[] }
 
-function novoAgente(id: string, nome: string, sexo: 'M' | 'F', dx: number, dz: number): Agente {
-  const x = PONTO_INICIAL.x + dx, z = PONTO_INICIAL.z + dz;
-  return { id, nome, sexo, x, y: heightAt(x, z), z, rotacao: 0, acao: 'parado', alvo: null, espera: 0, travado: 0 };
+function mundoNovo(): EstadoSalvo {
+  console.log('Criando um mundo novo.');
+  return {
+    versao: 2, tick: 0, deslocamentoMs: 0, velocidadeIdx: 0,
+    criadoEm: Date.now(),
+    agentes: [
+      novoAgente('ag_001', 'Aru', 'M', PONTO_INICIAL.x + 5, PONTO_INICIAL.z + 2),
+      novoAgente('ag_002', 'Nia', 'F', PONTO_INICIAL.x + 6, PONTO_INICIAL.z - 2),
+    ],
+    frutos: ARBUSTOS.map(b => Math.ceil(b.max / 2)),
+  };
 }
 
 function carregar(): EstadoSalvo {
   try {
     const e = JSON.parse(fs.readFileSync(ARQUIVO, 'utf8')) as EstadoSalvo;
-    if (e.versao === 1) { console.log(`Estado carregado (tick ${e.tick}).`); return e; }
+    if (e.versao === 2) { console.log(`Estado carregado (tick ${e.tick}).`); return e; }
+    console.log('O estado salvo é de uma versão antiga.');
   } catch { /* primeira execução */ }
-  console.log('Criando um mundo novo.');
-  return {
-    versao: 1, tick: 0, deslocamentoMs: 0, velocidadeIdx: 0,
-    agentes: [novoAgente('ag_001', 'Aru', 'M', 5, 2), novoAgente('ag_002', 'Nia', 'F', 6, -2)],
-  };
+  return mundoNovo();
 }
 
 const estado = carregar();
+if (estado.velocidadeIdx >= VELOCIDADES.length) estado.velocidadeIdx = 0;
+const criadoEm = estado.criadoEm ?? TEMPO.INICIO_DO_MUNDO;   // mundos antigos continuam de onde estavam
+estado.criadoEm = criadoEm;
+
+// cada mundo começa no Dia 1 às 06:00, no momento em que foi criado
+const msMundo = () => TEMPO.INICIO_DO_MUNDO + (Date.now() - criadoEm) + estado.deslocamentoMs;
 
 function salvar() {
-  fs.mkdirSync(path.dirname(ARQUIVO), { recursive: true });
+  fs.mkdirSync(PASTA, { recursive: true });
   const tmp = ARQUIVO + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(estado));
   fs.renameSync(tmp, ARQUIVO);
 }
 
-// ---------- Comportamento provisório (vira utilidade + necessidades na Fase 5) ----------
-const aleatorio = mulberry32(SEED * 31 + estado.tick);
-const terraSeca = (x: number, z: number) =>
-  Math.abs(x) < LIMITE && Math.abs(z) < LIMITE && heightAt(x, z) > WATER_LEVEL + 0.5;
-
-function escolherAlvo(a: Agente) {
-  for (let i = 0; i < 12; i++) {
-    const ang = aleatorio() * Math.PI * 2, d = 5 + aleatorio() * 25;
-    const x = a.x + Math.cos(ang) * d, z = a.z + Math.sin(ang) * d;
-    if (terraSeca(x, z)) return { x, z };
-  }
-  return null;
+const pad = (n: number) => String(n).padStart(2, '0');
+function carimbo() {
+  const t = tempoDoMundo(msMundo());
+  return `Ano ${t.ano} · Dia ${t.diaDoAno} · ${pad(t.hora)}:${pad(t.minuto)}`;
+}
+function registrar(texto: string) {
+  const linha = `[${carimbo()}] ${texto}`;
+  console.log(linha);
+  fs.mkdirSync(PASTA, { recursive: true });
+  fs.appendFileSync(EVENTOS, linha + '\n');
 }
 
-function atualizarAgente(a: Agente) {
-  if (a.espera > 0) { a.espera -= DT; a.acao = 'parado'; return; }
-  if (!a.alvo) {
-    a.alvo = escolherAlvo(a);
-    if (!a.alvo) { a.espera = 2; return; }
-  }
-  const dx = a.alvo.x - a.x, dz = a.alvo.z - a.z, dist = Math.hypot(dx, dz);
-  if (dist < 0.5) {
-    a.alvo = null; a.acao = 'parado';
-    a.espera = aleatorio() < 0.6 ? 2 + aleatorio() * 8 : 0;
-    return;
-  }
-  const passo = Math.min(dist, 1.4 * DT);                 // 1,4 m/s: caminhada humana
-  const nx = a.x + (dx / dist) * passo, nz = a.z + (dz / dist) * passo;
-  if (!terraSeca(nx, nz)) { a.alvo = null; return; }
+// ---------- Simulação ----------
+const aleatorio = mulberry32(SEED * 31 + estado.tick);
 
-  const antesX = a.x, antesZ = a.z;
-  a.x = nx; a.z = nz;
-  resolverColisao(a, 0.35);
-  const andou = Math.hypot(a.x - antesX, a.z - antesZ);
-  a.travado = andou < passo * 0.3 ? a.travado + 1 : 0;
-  if (a.travado > 20) { a.alvo = null; a.travado = 0; }   // preso numa árvore: muda de ideia
+function passo() {
+  estado.tick++;
+  const vel = VELOCIDADES[estado.velocidadeIdx];
+  const ceu = estadoDoCeu(msMundo(), SEED);
+  const horaBase = ceu.tempo.diasTotais * 24;
+  const base = {
+    horas: HORAS_POR_PASSO, dt: DT, luz: ceu.luzDoDia, noite: ceu.luzDoDia < 0.15,
+    temperatura: ceu.clima.temperatura, chuva: ceu.clima.chuva, vento: ceu.clima.vento,
+    frutos: estado.frutos, agentes: estado.agentes, rand: aleatorio,
+    evento: (a: Agente, t: string) => registrar(`${a.nome} ${t}`),
+  };
 
-  a.y = heightAt(a.x, a.z);
-  a.rotacao = Math.atan2(dx, dz);
-  a.acao = 'andando';
+  // com o tempo acelerado, roda vários passos de vida por tick
+  for (let s = 0; s < vel; s++) {
+    const ctx: Contexto = { ...base, hora: horaBase + s * HORAS_POR_PASSO };
+    for (const a of estado.agentes) atualizarAgente(a, ctx);
+  }
+
+  // frutos crescem de novo (mais no verão, quase nada no inverno)
+  const horas = vel * HORAS_POR_PASSO, fator = FATOR_ESTACAO[ceu.tempo.estacao];
+  ARBUSTOS.forEach((b, i) => {
+    if (estado.frutos[i] < b.max && aleatorio() < (horas / 8) * fator) estado.frutos[i]++;
+  });
+
+  estado.deslocamentoMs += DT * 1000 * (vel - 1);
 }
 
 // ---------- Rede ----------
@@ -107,30 +120,54 @@ wss.on('connection', ws => {
   });
 });
 
+const r2 = (v: number) => Math.round(v * 100) / 100;
 const paraRede = (a: Agente): EntidadeRede => ({
-  id: a.id, nome: a.nome, sexo: a.sexo, x: a.x, y: a.y, z: a.z, rotacao: a.rotacao, acao: a.acao });
+  id: a.id, nome: a.nome, sexo: a.sexo, x: a.x, y: a.y, z: a.z, rotacao: a.rotacao,
+  acao: a.acao, intencao: a.intencao,
+  necessidades: {
+    fome: r2(a.corpo.fome), sede: r2(a.corpo.sede), sono: r2(a.corpo.sono),
+    energia: r2(a.corpo.energia), saude: r2(a.corpo.saude), frio: r2(a.corpo.frio),
+  },
+  memoria: {
+    agua: a.memoria.filter(m => m.tipo === 'agua').length,
+    comida: a.memoria.filter(m => m.tipo === 'comida').length,
+  },
+});
 
-// ---------- Loop principal ----------
-setInterval(() => {
-  estado.tick++;
-  estado.deslocamentoMs += DT * 1000 * (VELOCIDADES[estado.velocidadeIdx] - 1);
-  for (const a of estado.agentes) atualizarAgente(a);
-
+function transmitir() {
   const msg: MensagemServidor = {
-    tipo: 'estado', tick: estado.tick, msMundo: Date.now() + estado.deslocamentoMs,
-    velocidade: VELOCIDADES[estado.velocidadeIdx], entidades: estado.agentes.map(paraRede),
+    tipo: 'estado', tick: estado.tick, msMundo: msMundo(),
+    velocidade: VELOCIDADES[estado.velocidadeIdx],
+    entidades: estado.agentes.map(paraRede), frutos: estado.frutos,
   };
   const texto = JSON.stringify(msg);
   for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(texto);
-}, 1000 / TICKS_POR_SEGUNDO);
+}
+
+// ---------- Loop com passo fixo (compensa o atraso do timer) ----------
+let ultimo = performance.now();
+let acumulado = 0;
+setInterval(() => {
+  const agora = performance.now();
+  acumulado += (agora - ultimo) / 1000;
+  ultimo = agora;
+  let n = 0;
+  while (acumulado >= DT && n < 5) { passo(); acumulado -= DT; n++; }
+  if (n === 5) acumulado = 0;   // se o computador travar, não tenta recuperar tudo de uma vez
+  if (n > 0) transmitir();
+}, 20);
 
 setInterval(salvar, 10_000);
 
-const pad = (n: number) => String(n).padStart(2, '0');
+const pct = (v: number) => `${Math.round(v * 100)}%`;
 setInterval(() => {
-  const t = tempoDoMundo(Date.now() + estado.deslocamentoMs);
-  console.log(`[Ano ${t.ano} · Dia ${t.diaDoAno} · ${pad(t.hora)}:${pad(t.minuto)}] tick ${estado.tick} · ` +
-    `${estado.agentes.length} agentes · ${wss.clients.size} observadores`);
+  const c = estadoDoCeu(msMundo(), SEED).clima;
+  console.log(`[${carimbo()}] tick ${estado.tick} · ${c.tipo} ${c.temperatura.toFixed(1)} °C · ${wss.clients.size} observadores`);
+  for (const a of estado.agentes) {
+    const n = a.corpo;
+    console.log(`   ${a.nome}: ${a.intencao} · fome ${pct(n.fome)} · sede ${pct(n.sede)} · sono ${pct(n.sono)} · ` +
+      `energia ${pct(n.energia)} · saúde ${pct(n.saude)}`);
+  }
 }, 30_000);
 
 const encerrar = () => { salvar(); console.log('Estado salvo.'); process.exit(0); };
