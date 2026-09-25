@@ -141,7 +141,34 @@ function imigrar(e: Estado, esp: Especie, hora: number, rand: () => number, regi
 }
 
 // ---------- Passo ----------
+// grade espacial dos animais: cada um só olha para quem está nas células em volta
+const CELULA_VIZ = 20;
+const chaveViz = (cx: number, cz: number) => (cx + 100) * 1000 + (cz + 100);
+const gradeViz = new Map<number, Animal[]>();
+
+function montarGrade(animais: Animal[]) {
+  for (const lista of gradeViz.values()) lista.length = 0;
+  for (const an of animais) {
+    if (!an.vivo) continue;
+    const k = chaveViz(Math.floor(an.x / CELULA_VIZ), Math.floor(an.z / CELULA_VIZ));
+    const lista = gradeViz.get(k);
+    if (lista) lista.push(an); else gradeViz.set(k, [an]);
+  }
+}
+
+function perto(x: number, z: number, raio: number): Animal[] {
+  const r: Animal[] = [];
+  const c0 = Math.floor((x - raio) / CELULA_VIZ), c1 = Math.floor((x + raio) / CELULA_VIZ);
+  const d0 = Math.floor((z - raio) / CELULA_VIZ), d1 = Math.floor((z + raio) / CELULA_VIZ);
+  for (let i = c0; i <= c1; i++) for (let j = d0; j <= d1; j++) {
+    const lista = gradeViz.get(chaveViz(i, j));
+    if (lista) for (const an of lista) r.push(an);
+  }
+  return r;
+}
+
 function calcularGrupos(ctx: Contexto) {
+  montarGrade(ctx.animais);
   ctx.grupos.clear();
   for (const k of ESPECIES) ctx.contagem[k] = 0;
   for (const an of ctx.animais) {
@@ -174,7 +201,7 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     luz: ceu.luzDoDia, noite: ceu.luzDoDia < 0.15, estacao: ceu.tempo.estacao,
     temperatura: ceu.clima.temperatura, chuva: ceu.clima.chuva, vento: ceu.clima.vento, tempestade: ceu.clima.tempestade,
     frutos: e.frutos, pasto: e.pasto, raizes: e.raizes, marcas: e.marcas, agentes: e.agentes, animais: e.animais, carcacas: e.carcacas,
-    porId, grupos: new Map(), contagem: {}, rand, evento: registrar,
+    porId, grupos: new Map(), perto, contagem: {}, rand, evento: registrar,
     novoId: prefixo => `${prefixo}_${e.proximoId++}`,
     novaCarcaca: c => { const k = { ...c, id: e.proximoId++ }; e.carcacas.push(k); return k; },
     nascer: a => { nascidos.push(a); porId.set(a.id, a); },
@@ -186,7 +213,7 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     calcularGrupos(ctx);
     for (const a of e.agentes) atualizarAgente(a, ctx);
     for (const an of e.animais) atualizarAnimal(an, ctx);
-    if (nascidos.length) { e.animais.push(...nascidos); nascidos.length = 0; }
+    if (nascidos.length) { e.animais.push(...nascidos); nascidos.length = 0; montarGrade(e.animais); }
   }
 
   // ecologia: frutos, pasto e carcaças, uma vez por tick

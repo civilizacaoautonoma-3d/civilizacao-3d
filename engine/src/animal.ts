@@ -48,6 +48,7 @@ export interface Animal {
   abrigado: boolean; amontoado: boolean;
   territorio: Ponto | null;                 // centro do território (lobos)
   ultimaMarca: number; migrouEm: number; ultimaBriga: number;
+  dispersao: Ponto | null;                  // para onde está se mudando (sobrevive a um susto no caminho)
 }
 
 const lim = (v: number) => Math.min(1, Math.max(0, v));
@@ -80,7 +81,7 @@ export function completarAnimal(an: Partial<Animal> & Pick<Animal, 'corpo' | 'es
   an.corpo.frio ??= 0; an.corpo.gordura ??= 0.3;
   an.motivo ??= null; an.arbustoVisto ??= -1; an.rivalVisto ??= null; an.curiosoDe ??= null;
   an.abrigado ??= false; an.amontoado ??= false; an.territorio ??= null;
-  an.ultimaMarca ??= 0; an.migrouEm ??= -1e9; an.ultimaBriga ??= -1e9;
+  an.ultimaMarca ??= 0; an.migrouEm ??= -1e9; an.ultimaBriga ??= -1e9; an.dispersao ??= null;
   for (const e of PERFIS[an.especie].emocoes) an.emocoes[e] ??= 0;
   return an as Animal;
 }
@@ -89,6 +90,13 @@ export function completarAnimal(an: Partial<Animal> & Pick<Animal, 'corpo' | 'es
 const pisavel = (an: Animal, x: number, z: number) => (PERFIS[an.especie].aquatico ? naAgua(x, z) : terraSeca(x, z));
 const pontoPara = (an: Animal, x: number, z: number, rand: () => number, min: number, max: number) =>
   PERFIS[an.especie].aquatico ? pontoNaAgua(x, z, rand, min, max) : pontoAleatorio(x, z, rand, min, max);
+
+// sair do grupo e ir viver em outro lugar
+function partir(an: Animal, ctx: Contexto, min: number, max: number) {
+  an.dispersao = pontoPara(an, an.x, an.z, ctx.rand, min, max);
+  an.objetivo = 'dispersar'; an.territorio = null; an.alvoId = null; an.motivo = null;
+  definirDestino(an, ctx, an.dispersao, PERFIS[an.especie].andar);
+}
 
 // ---------- Memória associativa ----------
 export function lembrarLugar(an: Animal, tipo: LugarLembrado['tipo'], x: number, z: number) {
@@ -155,7 +163,7 @@ function perceber(an: Animal, ctx: Contexto) {
   const carnivoro = p.dieta === 'carne';
   let meusPerto = 0;
   if (carnivoro || p.territorial)
-    for (const o of ctx.animais) if (o.vivo && o.grupo === an.grupo && Math.hypot(o.x - an.x, o.z - an.z) < 25) meusPerto++;
+    for (const o of ctx.perto(an.x, an.z, 25)) if (o.vivo && o.grupo === an.grupo && Math.hypot(o.x - an.x, o.z - an.z) < 25) meusPerto++;
 
   let presa: Ser | null = null, notaPresa = 0;
   an.curiosoDe = null;
@@ -187,7 +195,7 @@ function perceber(an: Animal, ctx: Contexto) {
   an.amontoado = false; an.rivalVisto = null;
   // carnívoros farejam presas além do que enxergam
   const faro = carnivoro && !dormindo ? Math.max(visao, p.olfato * 0.5) : visao;
-  for (const o of ctx.animais) {
+  for (const o of ctx.perto(an.x, an.z, Math.max(visao, faro, 20))) {
     if (o === an || !o.vivo) continue;
     const d = Math.hypot(o.x - an.x, o.z - an.z);
     if (o.mae === an.id && d < 20) filhotePerto = true;
@@ -211,7 +219,7 @@ function perceber(an: Animal, ctx: Contexto) {
       const go = ctx.grupos.get(o.grupo);
       if (p.territorial && an.adulto && o.adulto) {
         // outra matilha: quem está em maior número enfrenta; em menor número, recua
-        const delesPerto = ctx.animais.filter(x => x.vivo && x.grupo === o.grupo && Math.hypot(x.x - o.x, x.z - o.z) < 25).length;
+        const delesPerto = ctx.perto(o.x, o.z, 25).filter(x => x.vivo && x.grupo === o.grupo && Math.hypot(x.x - o.x, x.z - o.z) < 25).length;
         if (d < 25) {
           if (delesPerto === 1 && meusPerto >= 2 && (g?.n ?? 1) >= 3) an.rivalVisto = { id: o.id, motivo: 'expulsar' };
           else if (meusPerto > delesPerto || (meusPerto === delesPerto && g?.lider === an)) an.rivalVisto = { id: o.id, motivo: 'rival' };
@@ -239,7 +247,7 @@ function perceber(an: Animal, ctx: Contexto) {
 
   // um lobo sozinho que encontra uma matilha só entra se ela for pequena
   if (p.territorial && sozinho && an.rivalVisto === null) {
-    for (const o of ctx.animais) {
+    for (const o of ctx.perto(an.x, an.z, visao)) {
       if (!o.vivo || o.especie !== an.especie || o.grupo === an.grupo || Math.hypot(o.x - an.x, o.z - an.z) > visao) continue;
       const go = ctx.grupos.get(o.grupo);
       if (go && go.n < 3) { an.grupo = o.grupo; ctx.evento('Um lobo solitário se juntou a uma matilha pequena'); break; }
@@ -267,7 +275,7 @@ function perceber(an: Animal, ctx: Contexto) {
   if (a) {
     // o alarme dos pássaros: quando um levanta voo assustado, todo mundo em volta fica alerta
     if (p.alarme && !an.ameaca?.direta)
-      for (const o of ctx.animais) if (o !== an && o.vivo && Math.hypot(o.x - an.x, o.z - an.z) < 25)
+      for (const o of ctx.perto(an.x, an.z, 25)) if (o !== an && o.vivo && Math.hypot(o.x - an.x, o.z - an.z) < 25)
         o.emocoes.alerta = Math.max(o.emocoes.alerta ?? 0, 0.7);
     an.ameaca = { id: a.id, x: a.x, z: a.z, tipo: ehAnimal(a) ? a.especie : 'humano', direta: true };
     e.medo = Math.max(e.medo ?? 0, Math.min(1, nivel));
@@ -309,7 +317,8 @@ function notaDePresa(an: Animal, o: Animal, meusPerto: number, ctx: Contexto) {
   let nota: number;
   if (o.especie === 'coelho') nota = 1;
   else if (o.especie === 'cervo') nota = meusPerto >= 3 ? 0.9 : 0.3;
-  else nota = mo < 0.5 ? 0.9 : an.corpo.fome > 0.85 && meusPerto >= 3 ? 0.3 : 0;   // javali adulto revida
+  else nota = (mo < 0.5 ? 0.9 : an.corpo.fome > 0.85 && meusPerto >= 3 ? 0.3 : 0)   // javali adulto revida
+    * (1 - 0.9 * (an.associacoes['especie:javali'] ?? 0));                              // e quem já apanhou de um evita
   nota *= 1.5 - 0.5 * mo;
   if (o.corpo.saude < 0.6) nota *= 1.5;
   return nota;
@@ -325,7 +334,7 @@ function tentarConceber(an: Animal, ctx: Contexto) {
   if ((ctx.contagem[an.especie] ?? 0) >= p.capacidade) return;
   if (p.social === 'matilha' && ctx.grupos.get(an.grupo)?.femeaDominante !== an) return;   // só a fêmea dominante cria
   let machos = 0, vizinhos = 0;
-  for (const o of ctx.animais) {
+  for (const o of ctx.perto(an.x, an.z, 40)) {
     if (o === an || !o.vivo || o.especie !== an.especie) continue;
     const d = Math.hypot(o.x - an.x, o.z - an.z);
     if (d < 30) vizinhos++;
@@ -381,6 +390,7 @@ export function ferirAnimal(an: Animal, dano: number, agr: Agressor, ctx: Contex
   an.corpo.saude = lim(an.corpo.saude - dano);
   // sensibilização: um único ataque basta para aprender o perigo
   if (agr.tipo === 'humano') an.associacoes[agr.id] = 1;
+  else if (agr.tipo !== an.especie) an.associacoes[`especie:${agr.tipo}`] = 1;   // a dor ensina quem é perigoso
   const brigando = an.objetivo === 'enfrentar' && an.alvoId === agr.id && an.corpo.saude > 0.45;
   an.emocoes.medo = brigando ? Math.max(an.emocoes.medo ?? 0, 0.4) : 1;
   an.emocoes.alerta = 1;
@@ -390,18 +400,22 @@ export function ferirAnimal(an: Animal, dano: number, agr: Agressor, ctx: Contex
   if (an.acao === 'dormindo' || an.acao === 'escondido') an.acao = 'parado';
   an.ocupadoAte = 0; an.proximaDecisao = 0;
   // quem do grupo viu também aprende
-  for (const o of ctx.animais) {
+  for (const o of ctx.perto(an.x, an.z, 30)) {
     if (o === an || !o.vivo || o.grupo !== an.grupo || Math.hypot(o.x - an.x, o.z - an.z) > 30) continue;
     if (agr.tipo === 'humano') o.associacoes[agr.id] = Math.max(o.associacoes[agr.id] ?? 0, 0.7);
     o.emocoes.alerta = 1;
   }
   if (an.corpo.saude <= 0) return morrerAnimal(an, causaDoAtaque(agr, an), ctx);
+  // lobo solitário expulso pela matilha vai procurar outro território
+  const g = ctx.grupos.get(an.grupo);
+  if (agr.tipo === an.especie && PERFIS[an.especie].territorial && (!g || g.n <= 1) && !an.dispersao) {
+    partir(an, ctx, 80, 160);
+    ctx.evento('Um lobo solitário foi expulso por uma matilha e partiu');
+  }
   // cervo que perde a disputa larga a manada
   if (an.motivo === 'disputa' && an.corpo.saude < 0.75) {
-    an.motivo = null; an.alvoId = null;
     an.grupo = ctx.novoId('g');
-    an.objetivo = 'dispersar';
-    definirDestino(an, ctx, pontoPara(an, an.x, an.z, ctx.rand, 50, 120), PERFIS[an.especie].andar);
+    partir(an, ctx, 50, 120);
     ctx.evento(`Um ${PERFIS[an.especie].nome} perdeu a disputa pela manada e foi embora`);
   }
   return null;
@@ -598,8 +612,9 @@ function deveEnfrentar(an: Animal, s: Ser, ctx: Contexto) {
   const d = distancia(an, s);
   if (an.corpo.saude < 0.35 || !an.adulto) return false;
   if (!ehAnimal(s) && s.acao === 'dormindo') return false;   // quem dorme não ameaça ninguém
-  const filhotes = ctx.animais.some(o => o.vivo && o.mae === an.id && Math.hypot(o.x - an.x, o.z - an.z) < 15);
-  return (filhotes && d < 10) || d < 3 || (an.sexo === 'M' && d < 4.5 && an.corpo.saude > 0.6);
+  if (ctx.hora - an.ultimaBriga < 1) return false;            // depois de uma investida, dá um tempo
+  const filhotes = ctx.perto(an.x, an.z, 15).some(o => o.vivo && o.mae === an.id && Math.hypot(o.x - an.x, o.z - an.z) < 15);
+  return (filhotes && d < 6) || d < 3 || (an.sexo === 'M' && d < 4.5 && an.corpo.saude > 0.6);
 }
 
 // ---------- Decisão: instinto + utilidade ----------
@@ -630,7 +645,7 @@ function decidir(an: Animal, ctx: Contexto) {
   }
   // briga da matilha: ajuda o companheiro contra o rival
   if (p.territorial && an.adulto && !notas.enfrentar && !notas.fugir) {
-    for (const o of ctx.animais) {
+    for (const o of ctx.perto(an.x, an.z, 30)) {
       if (o === an || !o.vivo || o.grupo !== an.grupo || o.objetivo !== 'enfrentar' || !o.alvoId) continue;
       if (Math.hypot(o.x - an.x, o.z - an.z) < 30) { notas.enfrentar = 1.4; alvoBriga = o.alvoId; motivoBriga = o.motivo; break; }
     }
@@ -647,7 +662,7 @@ function decidir(an: Animal, ctx: Contexto) {
     if (an.presaVista && c.fome > 0.3) notas.cacar = Math.pow(c.fome, 1.2) * 1.1 + (e.excitacao ?? 0) * 0.2;
     // caçar em grupo: entra na caçada de um companheiro de matilha
     if (mat >= 0.3 && c.fome > 0.2 && an.objetivo !== 'cacar') {
-      for (const o of ctx.animais) {
+      for (const o of ctx.perto(an.x, an.z, 40)) {
         if (o === an || !o.vivo || o.grupo !== an.grupo || o.objetivo !== 'cacar' || !o.alvoId) continue;
         if (Math.hypot(o.x - an.x, o.z - an.z) < 40) { notas.cacar = Math.max(notas.cacar ?? 0, 0.75); an.presaVista = o.alvoId; break; }
       }
@@ -667,7 +682,7 @@ function decidir(an: Animal, ctx: Contexto) {
     const d = distancia(an, g.lider);
     if (d > p.coesao) notas.seguir = Math.min(0.8, (d - p.coesao) / 15 + 0.3);
   }
-  if (an.objetivo === 'dispersar' && an.destino) notas.dispersar = 0.6;
+  if (an.dispersao) notas.dispersar = 0.6;
 
   // migração: o líder da manada leva o grupo para onde há pasto
   if (p.migraNoInverno && (!g || g.lider === an) && an.adulto) {
@@ -699,8 +714,11 @@ function decidir(an: Animal, ctx: Contexto) {
     if (escolha === 'cacar') { an.alvoId = an.presaVista; an.inicioCaca = ctx.hora; an.motivo = null; }
     else if (escolha === 'enfrentar') {
       an.alvoId = alvoBriga; an.motivo = motivoBriga; an.inicioCaca = ctx.hora; an.ultimaBriga = ctx.hora;
-      if (motivoBriga === 'expulsar') ctx.evento('A matilha foi para cima de um lobo solitário');
-      else if (motivoBriga === 'rival') ctx.evento('Duas matilhas de lobos se enfrentaram');
+      const rivalAntes = alvoBriga ? ctx.porId.get(alvoBriga) : undefined;
+      const novidade = !rivalAntes || !ehAnimal(rivalAntes) || ctx.hora - rivalAntes.ultimaBriga > 12;
+      if (rivalAntes && ehAnimal(rivalAntes) && motivoBriga !== 'defesa') rivalAntes.ultimaBriga = ctx.hora;
+      if (motivoBriga === 'expulsar') { if (novidade) ctx.evento('A matilha foi para cima de um lobo solitário'); }
+      else if (motivoBriga === 'rival') { if (novidade) ctx.evento('Duas matilhas de lobos se enfrentaram'); }
       else if (motivoBriga === 'disputa') ctx.evento(`Dois ${p.plural} machos disputam a manada`);
       else if (motivoBriga === 'defesa' && an.especie === 'javali') {
         const s = alvoBriga ? ctx.porId.get(alvoBriga) : undefined;
@@ -801,7 +819,7 @@ function executar(an: Animal, ctx: Contexto) {
         an.rotacao = Math.atan2(alvo.x - an.x, alvo.z - an.z);
         an.ocupadoAte = ctx.hora + 0.02;
         if (ctx.rand() < 0.5) {
-          const dano = an.especie === 'javali' ? (ehAnimal(alvo) ? 0.18 : 0.12) : an.motivo === 'disputa' ? 0.06 : 0.08;
+          const dano = an.especie === 'javali' ? (ehAnimal(alvo) ? 0.15 : 0.08) : an.motivo === 'disputa' ? 0.06 : 0.08;
           if (ehAnimal(alvo)) ferirAnimal(alvo, dano, { id: an.id, x: an.x, z: an.z, tipo: an.especie }, ctx);
           else ferirAgente(alvo, dano, an, ctx);
           // na defesa, é uma investida só: acerta e recua (a não ser que o perigo continue encostado)
@@ -951,7 +969,7 @@ function executar(an: Animal, ctx: Contexto) {
       const g = ctx.grupos.get(an.grupo);
       if (c.frio > 0.2 && !an.amontoado && g && g.n > 1 && an.acao !== 'dormindo') {
         let perto: Animal | null = null, dp = 15;
-        for (const o of ctx.animais) {
+        for (const o of ctx.perto(an.x, an.z, 15)) {
           if (o === an || !o.vivo || o.grupo !== an.grupo) continue;
           const d = distancia(an, o);
           if (d < dp) { dp = d; perto = o; }
@@ -1017,10 +1035,11 @@ function executar(an: Animal, ctx: Contexto) {
     }
 
     case 'dispersar': {
-      if (semDestino()) { an.objetivo = null; return; }
-      const r = mover(an, an.destino!, andar, ctx);
+      if (!an.dispersao) { an.objetivo = null; return; }
+      if (!an.destino) definirDestino(an, ctx, an.dispersao, andar);
+      const r = ctx.hora > an.prazo ? 'bloqueado' : mover(an, an.destino!, andar, ctx);
       an.acao = 'andando'; an.intencao = 'procurando um território novo';
-      if (r !== 'andando') { an.destino = null; an.objetivo = null; }
+      if (r !== 'andando') { an.destino = null; an.dispersao = null; an.objetivo = null; }
       return;
     }
 
@@ -1092,8 +1111,7 @@ export function atualizarAnimal(an: Animal, ctx: Contexto) {
     const g = ctx.grupos.get(an.grupo);
     if (g && g.n > p.grupoMax) {
       an.grupo = ctx.novoId('g');
-      an.objetivo = 'dispersar'; an.territorio = null;
-      definirDestino(an, ctx, pontoPara(an, an.x, an.z, ctx.rand, 60, 150), p.andar);
+      partir(an, ctx, 60, 150);
       if (p.social === 'matilha') ctx.evento('Um lobo jovem deixou a matilha');
     }
   }

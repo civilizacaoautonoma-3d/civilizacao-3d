@@ -19,6 +19,7 @@ export interface Contexto {
   agentes: Agente[]; animais: Animal[]; carcacas: Carcaca[];
   porId: Map<string, Ser>;
   grupos: Map<string, InfoGrupo>;
+  perto: (x: number, z: number, raio: number) => Animal[];   // animais nas células da grade em volta (inclui mortos)
   contagem: Record<string, number>;   // animais vivos por espécie
   rand: () => number;
   evento: (texto: string) => void;
