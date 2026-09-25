@@ -336,8 +336,8 @@ const sunDir = new THREE.Vector3(), moonDir = new THREE.Vector3();
 const C = {
   fogDay: new THREE.Color(0xcfe3f0), fogCloudy: new THREE.Color(0x9aa3ab), fogNight: new THREE.Color(0x1c2744),
   sunLow: new THREE.Color(0xffa060), sunHigh: new THREE.Color(0xfff1d6), moonLight: new THREE.Color(0x8fa8ff),
-  hemiSkyDay: new THREE.Color(0xbfd8ff), hemiSkyNight: new THREE.Color(0x3a4a78),
-  hemiGroundDay: new THREE.Color(0x4a5a2a), hemiGroundNight: new THREE.Color(0x0a0a08),
+  hemiSkyDay: new THREE.Color(0xbfd8ff), hemiSkyNight: new THREE.Color(0x6878b0),
+  hemiGroundDay: new THREE.Color(0x4a5a2a), hemiGroundNight: new THREE.Color(0x262a22),
 };
 const dayFog = new THREE.Color();
 let lightning = 0;
@@ -360,20 +360,21 @@ function updateSky(dt: number) {
   lightning = Math.max(0, lightning - dt * 5);
 
   // noite mais clara: exposição mínima maior
-  renderer.toneMappingExposure = lerp(0.45, 0.6, day) * (1 - 0.3 * clima.nuvens) + lightning * 0.8;
+  // a noite é escura, mas o observador precisa enxergar as silhuetas (só visual: a simulação tem sua própria visão noturna)
+  renderer.toneMappingExposure = lerp(0.6, 0.6, day) * (1 - 0.3 * clima.nuvens) + lightning * 0.8;
 
   const lightDir = sol.elevacao > -2 ? sunDir : moonDir;
   if (sol.elevacao > -2) {
     sunLight.intensity = 2.4 * smooth(clamp01(sol.elevacao / 10)) * (1 - 0.75 * clima.nuvens);
     sunLight.color.copy(C.sunLow).lerp(C.sunHigh, clamp01(sol.elevacao / 25));
   } else {
-    sunLight.intensity = 0.8 * (1 - 0.5 * clima.nuvens) * Math.max(0.4, clamp01(lua.elevacao / 10));
+    sunLight.intensity = 1.3 * (1 - 0.5 * clima.nuvens) * Math.max(0.5, clamp01(lua.elevacao / 10));
     sunLight.color.copy(C.moonLight);
   }
   sunLight.position.copy(player.pos).addScaledVector(lightDir, 150);
   sunLight.target.position.copy(player.pos);
 
-  hemi.intensity = lerp(0.35, 0.75, day) * (1 - 0.25 * clima.nuvens) + lightning * 3;
+  hemi.intensity = lerp(0.85, 0.75, day) * (1 - 0.25 * clima.nuvens) + lightning * 3;
   hemi.color.copy(C.hemiSkyNight).lerp(C.hemiSkyDay, day);
   hemi.groundColor.copy(C.hemiGroundNight).lerp(C.hemiGroundDay, day);
 
