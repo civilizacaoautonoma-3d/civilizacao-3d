@@ -2,65 +2,17 @@ import './style.css';
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { estadoDoCeu, TEMPO } from './clima';
+import { estadoDoCeu, TEMPO } from '../../shared/clima';
+import { SEED, WORLD_SIZE, WATER_LEVEL, heightAt, fbm, mulberry32, smooth,
+         ARVORES, PEDRAS, PONTO_INICIAL, resolverColisao } from '../../shared/mundo';
+import type { EntidadeRede, MensagemServidor } from '../../shared/protocolo';
 
-// ---------- Configuração do mundo ----------
-const SEED = 42;
-const WORLD_SIZE = 400;
-const WATER_LEVEL = 0;
 const EYE_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.4;
+const SERVIDOR = `ws://${location.hostname}:8080`;
 
-// ---------- Números aleatórios com semente ----------
-function mulberry32(a: number) {
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rand = mulberry32(SEED);
-const smooth = (t: number) => t * t * (3 - 2 * t);
 const clamp01 = (v: number) => THREE.MathUtils.clamp(v, 0, 1);
 const lerp = THREE.MathUtils.lerp;
-
-// ---------- Ruído para o relevo ----------
-const perm = new Uint8Array(512);
-{
-  const p = Array.from({ length: 256 }, (_, i) => i);
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [p[i], p[j]] = [p[j], p[i]];
-  }
-  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
-}
-const hash = (x: number, z: number) => perm[(perm[x & 255] + z) & 255] / 255;
-
-function valueNoise(x: number, z: number) {
-  const ix = Math.floor(x), iz = Math.floor(z);
-  const u = smooth(x - ix), v = smooth(z - iz);
-  const a = hash(ix, iz), b = hash(ix + 1, iz), c = hash(ix, iz + 1), d = hash(ix + 1, iz + 1);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
-
-function fbm(x: number, z: number) {
-  let sum = 0, amp = 0.5, freq = 1, total = 0;
-  for (let o = 0; o < 5; o++) {
-    sum += valueNoise(x * freq, z * freq) * amp;
-    total += amp; amp *= 0.5; freq *= 2;
-  }
-  return sum / total;
-}
-
-function heightAt(x: number, z: number) {
-  let h = (fbm(x * 0.012 + 100, z * 0.012 + 100) - 0.45) * 40;
-  const lake = Math.hypot(x - 60, z + 40);
-  h -= Math.max(0, 1 - lake / 55) * 14;
-  const edge = Math.max(Math.abs(x), Math.abs(z));
-  h += Math.max(0, edge - 160) * 0.6;
-  return h;
-}
 
 // ---------- Cena, câmera e renderizador ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -168,8 +120,8 @@ const drops = Array.from({ length: DROPS }, () => ({
 const rainPos = new Float32Array(DROPS * 6);
 const rainGeo = new THREE.BufferGeometry();
 rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-const rainMat = new THREE.LineBasicMaterial({ color: 0x9fb3c8, transparent: true, opacity: 0.55 });
-const rain = new THREE.LineSegments(rainGeo, rainMat);
+const rain = new THREE.LineSegments(rainGeo,
+  new THREE.LineBasicMaterial({ color: 0x9fb3c8, transparent: true, opacity: 0.55 }));
 rain.frustumCulled = false;
 scene.add(rain);
 
@@ -205,84 +157,104 @@ const water = new THREE.Mesh(waterGeo, new THREE.MeshStandardMaterial({
 water.position.y = WATER_LEVEL;
 scene.add(water);
 
-// ---------- Colisores ----------
-type Collider = { x: number; z: number; r: number };
-const colliders: Collider[] = [];
-
-const spawn = new THREE.Vector3();
-for (let r = 0; r < 150; r += 2) {
-  const a = r * 0.7, x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (heightAt(x, z) > 1.5) { spawn.set(x, heightAt(x, z), z); break; }
-}
-const farFromSpawn = (x: number, z: number) => Math.hypot(x - spawn.x, z - spawn.z) > 8;
-
-// ---------- Árvores ----------
+// ---------- Árvores e pedras (mesma geração do servidor) ----------
 const dummy = new THREE.Object3D();
 {
-  const COUNT = 600;
   const trunkGeo = new THREE.CylinderGeometry(0.25, 0.35, 4, 6).translate(0, 2, 0);
   const leafGeo = new THREE.ConeGeometry(2, 5, 7).translate(0, 6, 0);
-  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x6b4a2f }), COUNT);
-  const leaves = new THREE.InstancedMesh(leafGeo, new THREE.MeshStandardMaterial({ color: 0x2f5d2a, flatShading: true }), COUNT);
-  let n = 0;
-  for (let tries = 0; n < COUNT && tries < COUNT * 20; tries++) {
-    const x = (rand() - 0.5) * (WORLD_SIZE - 20), z = (rand() - 0.5) * (WORLD_SIZE - 20);
-    const h = heightAt(x, z);
-    if (h < 1.5 || h > 14 || !farFromSpawn(x, z)) continue;
-    const s = 0.8 + rand() * 0.6;
-    dummy.position.set(x, h - 0.2, z);
-    dummy.rotation.set(0, rand() * Math.PI * 2, 0);
-    dummy.scale.setScalar(s);
+  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x6b4a2f }), ARVORES.length);
+  const leaves = new THREE.InstancedMesh(leafGeo, new THREE.MeshStandardMaterial({ color: 0x2f5d2a, flatShading: true }), ARVORES.length);
+  ARVORES.forEach((a, i) => {
+    dummy.position.set(a.x, a.h - 0.2, a.z);
+    dummy.rotation.set(0, a.rotacao, 0);
+    dummy.scale.setScalar(a.escala);
     dummy.updateMatrix();
-    trunks.setMatrixAt(n, dummy.matrix);
-    leaves.setMatrixAt(n, dummy.matrix);
-    colliders.push({ x, z, r: 0.35 * s });
-    n++;
-  }
-  trunks.count = leaves.count = n;
+    trunks.setMatrixAt(i, dummy.matrix);
+    leaves.setMatrixAt(i, dummy.matrix);
+  });
   trunks.castShadow = leaves.castShadow = true;
   scene.add(trunks, leaves);
-}
 
-// ---------- Pedras ----------
-{
-  const COUNT = 250;
   const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0),
-    new THREE.MeshStandardMaterial({ color: 0x8a8782, flatShading: true, roughness: 0.9 }), COUNT);
-  let n = 0;
-  for (let tries = 0; n < COUNT && tries < COUNT * 20; tries++) {
-    const x = (rand() - 0.5) * (WORLD_SIZE - 20), z = (rand() - 0.5) * (WORLD_SIZE - 20);
-    const h = heightAt(x, z);
-    if (h < -1 || !farFromSpawn(x, z)) continue;
-    const sx = 0.4 + rand() * 1.4, sy = 0.3 + rand() * 0.9, sz = 0.4 + rand() * 1.4;
-    dummy.position.set(x, h + sy * 0.3, z);
-    dummy.rotation.set(rand(), rand() * Math.PI * 2, rand());
-    dummy.scale.set(sx, sy, sz);
+    new THREE.MeshStandardMaterial({ color: 0x8a8782, flatShading: true, roughness: 0.9 }), PEDRAS.length);
+  PEDRAS.forEach((p, i) => {
+    dummy.position.set(p.x, p.h + p.sy * 0.3, p.z);
+    dummy.rotation.set(p.rx, p.ry, p.rz);
+    dummy.scale.set(p.sx, p.sy, p.sz);
     dummy.updateMatrix();
-    rocks.setMatrixAt(n, dummy.matrix);
-    colliders.push({ x, z, r: Math.max(sx, sz) * 0.85 });
-    n++;
-  }
-  rocks.count = n;
+    rocks.setMatrixAt(i, dummy.matrix);
+  });
   rocks.castShadow = rocks.receiveShadow = true;
   scene.add(rocks);
 }
 
-// ---------- Personagem provisório ----------
-const agent = new THREE.Group();
-{
-  const skin = new THREE.MeshStandardMaterial({ color: 0xc58c64 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 4, 8), skin);
-  body.position.y = 0.78;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), skin);
-  head.position.y = 1.72;
-  body.castShadow = head.castShadow = true;
-  agent.add(body, head);
-  const ax = spawn.x + 5, az = spawn.z + 2;
-  agent.position.set(ax, heightAt(ax, az), az);
-  colliders.push({ x: ax, z: az, r: 0.35 });
-  scene.add(agent);
+// ---------- Agentes (controlados pelo servidor) ----------
+interface AgenteVisual { grupo: THREE.Group; corpo: THREE.Mesh; alvo: THREE.Vector3; rot: number; acao: string; fase: number }
+const agentes = new Map<string, AgenteVisual>();
+
+function criarAgente(e: EntidadeRede): AgenteVisual {
+  const pele = new THREE.MeshStandardMaterial({ color: e.sexo === 'M' ? 0xb07850 : 0xd09a74 });
+  const corpo = new THREE.Mesh(new THREE.CapsuleGeometry(e.sexo === 'M' ? 0.3 : 0.26, e.sexo === 'M' ? 1.05 : 0.95, 4, 8), pele);
+  corpo.position.y = 0.8;
+  const cabeca = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), pele);
+  cabeca.position.y = 1.72;
+  const nariz = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.1), pele);   // indica a frente
+  nariz.position.set(0, 1.72, 0.2);
+  corpo.castShadow = cabeca.castShadow = true;
+  const grupo = new THREE.Group();
+  grupo.add(corpo, cabeca, nariz);
+  grupo.position.set(e.x, e.y, e.z);
+  grupo.rotation.y = e.rotacao;
+  scene.add(grupo);
+  const v: AgenteVisual = { grupo, corpo, alvo: new THREE.Vector3(e.x, e.y, e.z), rot: e.rotacao, acao: e.acao, fase: 0 };
+  agentes.set(e.id, v);
+  return v;
 }
+
+function aplicarEntidades(lista: EntidadeRede[]) {
+  const vivos = new Set<string>();
+  for (const e of lista) {
+    vivos.add(e.id);
+    const v = agentes.get(e.id) ?? criarAgente(e);
+    v.alvo.set(e.x, e.y, e.z);
+    v.rot = e.rotacao;
+    v.acao = e.acao;
+  }
+  for (const [id, v] of agentes) if (!vivos.has(id)) { scene.remove(v.grupo); agentes.delete(id); }
+}
+
+function animarAgentes(dt: number) {
+  const k = 1 - Math.exp(-dt * 10);
+  for (const v of agentes.values()) {
+    v.grupo.position.lerp(v.alvo, k);
+    const diff = ((v.rot - v.grupo.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    v.grupo.rotation.y += diff * k;
+    if (v.acao === 'andando') v.fase += dt * 8;
+    v.corpo.position.y = 0.8 + (v.acao === 'andando' ? Math.abs(Math.sin(v.fase)) * 0.04 : 0);
+  }
+}
+
+// ---------- Conexão com o motor ----------
+const relogio = { msMundo: Date.now(), recebidoEm: performance.now(), velocidade: 1 };
+let ws: WebSocket | null = null;
+let conectado = false;
+
+function conectar() {
+  ws = new WebSocket(SERVIDOR);
+  ws.onopen = () => { conectado = true; };
+  ws.onclose = () => { conectado = false; setTimeout(conectar, 2000); };
+  ws.onmessage = ev => {
+    const msg = JSON.parse(String(ev.data)) as MensagemServidor;
+    if (msg.tipo === 'estado') {
+      relogio.msMundo = msg.msMundo;
+      relogio.recebidoEm = performance.now();
+      relogio.velocidade = msg.velocidade;
+      aplicarEntidades(msg.entidades);
+    }
+  };
+}
+conectar();
+const msAgora = () => relogio.msMundo + (performance.now() - relogio.recebidoEm) * relogio.velocidade;
 
 // ---------- Interface ----------
 const overlay = document.createElement('div');
@@ -301,22 +273,17 @@ overlay.addEventListener('click', () => controls.lock());
 controls.addEventListener('lock', () => overlay.classList.add('hidden'));
 controls.addEventListener('unlock', () => overlay.classList.remove('hidden'));
 
-// velocidade do tempo (apenas para testes no navegador)
-const SPEEDS = [1, 60, 600, 3600];
-let speedIndex = 0;
-let timeOffsetMs = 0;
-
 const keys = new Set<string>();
 window.addEventListener('keydown', e => {
   keys.add(e.code);
-  if (e.code === 'KeyT') speedIndex = (speedIndex + 1) % SPEEDS.length;
+  if (e.code === 'KeyT' && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ tipo: 'alternar-velocidade' }));
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 
-// ---------- Jogador ----------
-const player = { pos: spawn.clone(), vy: 0, onGround: true };
+// ---------- Jogador (observador) ----------
+const player = { pos: new THREE.Vector3(PONTO_INICIAL.x, PONTO_INICIAL.y, PONTO_INICIAL.z), vy: 0, onGround: true };
 camera.position.set(player.pos.x, player.pos.y + EYE_HEIGHT, player.pos.z);
-camera.lookAt(agent.position.x, agent.position.y + 1.5, agent.position.z);
+camera.lookAt(player.pos.x + 5, player.pos.y + 1.5, player.pos.z);
 
 const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -331,8 +298,7 @@ function updatePlayer(dt: number) {
   const s = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   move.set(0, 0, 0).addScaledVector(fwd, f).addScaledVector(right, s);
 
-  const ground = heightAt(player.pos.x, player.pos.z);
-  const inWater = ground < WATER_LEVEL - 0.6;
+  const inWater = heightAt(player.pos.x, player.pos.z) < WATER_LEVEL - 0.6;
   let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 9 : 5;
   if (inWater) speed *= 0.45;
 
@@ -343,12 +309,13 @@ function updatePlayer(dt: number) {
     bobTime += dt * speed;
   }
 
-  for (const c of colliders) {
-    const dx = player.pos.x - c.x, dz = player.pos.z - c.z;
-    const d = Math.hypot(dx, dz), min = c.r + PLAYER_RADIUS;
+  resolverColisao(player.pos, PLAYER_RADIUS);
+  for (const v of agentes.values()) {
+    const dx = player.pos.x - v.grupo.position.x, dz = player.pos.z - v.grupo.position.z;
+    const d = Math.hypot(dx, dz), min = 0.35 + PLAYER_RADIUS;
     if (d < min && d > 1e-4) {
-      player.pos.x = c.x + (dx / d) * min;
-      player.pos.z = c.z + (dz / d) * min;
+      player.pos.x = v.grupo.position.x + (dx / d) * min;
+      player.pos.z = v.grupo.position.z + (dz / d) * min;
     }
   }
   const lim = WORLD_SIZE / 2 - 5;
@@ -373,30 +340,28 @@ const C = {
   hemiSkyDay: new THREE.Color(0xbfd8ff), hemiSkyNight: new THREE.Color(0x1a2440),
   hemiGroundDay: new THREE.Color(0x4a5a2a), hemiGroundNight: new THREE.Color(0x0a0a08),
 };
+const dayFog = new THREE.Color();
 let lightning = 0;
 let cloudDrift = 0;
 
 function updateSky(dt: number) {
-  const now = Date.now() + timeOffsetMs;
-  const { sol, lua, luzDoDia: day, clima } = estadoDoCeu(now, SEED);
+  const ceu = estadoDoCeu(msAgora(), SEED);
+  const { sol, lua, luzDoDia: day, clima } = ceu;
   const deg = THREE.MathUtils.degToRad;
 
   sunDir.setFromSphericalCoords(1, deg(90 - sol.elevacao), deg(sol.azimute));
   moonDir.setFromSphericalCoords(1, deg(90 - lua.elevacao), deg(lua.azimute));
 
-  // céu
   skyU['sunPosition'].value.copy(sunDir);
   skyU['turbidity'].value = 2 + clima.nuvens * 14;
   skyU['rayleigh'].value = lerp(0.4, 2.5, day) * (1 - clima.nuvens * 0.5);
   skyU['mieCoefficient'].value = 0.005 + clima.nuvens * 0.02;
 
-  // relâmpagos
   if (clima.tempestade > 0.5 && Math.random() < dt * 0.25) lightning = 1;
   lightning = Math.max(0, lightning - dt * 5);
 
   renderer.toneMappingExposure = lerp(0.3, 0.6, day) * (1 - 0.3 * clima.nuvens) + lightning * 0.8;
 
-  // luz direcional: sol de dia, lua à noite
   const lightDir = sol.elevacao > -2 ? sunDir : moonDir;
   if (sol.elevacao > -2) {
     sunLight.intensity = 2.4 * smooth(clamp01(sol.elevacao / 10)) * (1 - 0.75 * clima.nuvens);
@@ -412,26 +377,22 @@ function updateSky(dt: number) {
   hemi.color.copy(C.hemiSkyNight).lerp(C.hemiSkyDay, day);
   hemi.groundColor.copy(C.hemiGroundNight).lerp(C.hemiGroundDay, day);
 
-  // neblina
-  const dayFog = C.fogDay.clone().lerp(C.fogCloudy, clima.nuvens);
+  dayFog.copy(C.fogDay).lerp(C.fogCloudy, clima.nuvens);
   fog.color.copy(C.fogNight).lerp(dayFog, day);
   fog.far = lerp(340, 60, Math.max(clima.neblina, clima.chuva * 0.5));
   fog.near = fog.far * 0.15;
 
-  // lua e estrelas acompanham a câmera
   moon.position.copy(camera.position).addScaledVector(moonDir, 850);
   moon.visible = lua.elevacao > -3;
   stars.position.copy(camera.position);
   (stars.material as THREE.PointsMaterial).opacity = (1 - day) * (1 - clima.nuvens);
 
-  // nuvens
   cloudDrift += dt * (0.002 + clima.vento * 0.01);
   cloudMap.offset.set(cloudDrift, cloudDrift * 0.4);
   clouds.position.set(camera.position.x, camera.position.y + 140, camera.position.z);
   cloudMat.opacity = clamp01(clima.nuvens * 1.1);
   cloudMat.color.setScalar(lerp(0.12, 1, day) * (1 - 0.45 * clima.chuva) + lightning);
 
-  // chuva
   const active = Math.floor(DROPS * clima.chuva);
   rain.visible = active > 0;
   if (active > 0) {
@@ -446,8 +407,7 @@ function updateSky(dt: number) {
     rainGeo.attributes.position.needsUpdate = true;
     rain.position.set(camera.position.x, camera.position.y - 10, camera.position.z);
   }
-
-  return estadoDoCeu(now, SEED);
+  return ceu;
 }
 
 // ---------- Loop ----------
@@ -457,19 +417,17 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  timeOffsetMs += dt * 1000 * (SPEEDS[speedIndex] - 1);
 
   if (controls.isLocked) updatePlayer(dt);
+  animarAgentes(dt);
   const { tempo, clima } = updateSky(dt);
-
-  agent.children[0].scale.y = 1 + Math.sin(clock.elapsedTime * 2) * 0.015;
 
   frames++; fpsTime += dt;
   if (fpsTime >= 0.5) { fps = Math.round(frames / fpsTime); frames = 0; fpsTime = 0; }
   info.innerHTML =
     `Ano ${tempo.ano} · Dia ${tempo.diaDoAno}/${TEMPO.DIAS_POR_ANO} · ${tempo.estacao} · ${pad(tempo.hora)}:${pad(tempo.minuto)}<br>` +
     `${clima.tipo} · ${clima.temperatura.toFixed(1)} °C · vento ${Math.round(clima.vento * 40)} km/h<br>` +
-    `Tempo ×${SPEEDS[speedIndex]} (T) · FPS ${fps} · seed ${SEED}`;
+    `Servidor ${conectado ? 'conectado' : 'desconectado'} · ${agentes.size} agentes · tempo ×${relogio.velocidade} (T) · FPS ${fps}`;
 
   renderer.render(scene, camera);
 }
