@@ -74,7 +74,8 @@ Pendências da Fase 6: fome da Nia no outono (visto numa validação antiga), ce
 Navegação de verdade (contornar rios) e nojo (evitar carne estragada) ficam para a Fase 7/8.
 
 ## Git
-- Commitar cada mudança validada direto no `main`, com mensagem em português descrevendo o que mudou.
+- Commitar direto no `main` ao final de cada desenvolvimento validado, com mensagem em português descrevendo o que mudou.
+- Não fazer push: o usuário faz. Ao concluir uma fase, avisar que ela pode ser enviada ao GitHub.
 - `engine/data/` não é versionado (é o mundo do usuário).
 
 ## Como validar mudanças no motor
