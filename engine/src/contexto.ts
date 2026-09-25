@@ -14,7 +14,8 @@ export interface Contexto {
   horas: number;   // duração deste passo em horas do mundo
   dt: number;      // duração deste passo em segundos de caminhada
   luz: number; noite: boolean; estacao: Estacao;
-  temperatura: number; chuva: number; vento: number; tempestade: number;
+  temperatura: number; chuva: number; vento: number; tempestade: number; neblina: number;
+  clima: string;   // tipo do clima agora ('Limpo', 'Chuva', 'Neblina'…)
   frutos: number[]; pasto: number[]; raizes: number[]; marcas: Marca[];
   agentes: Agente[]; animais: Animal[]; carcacas: Carcaca[];
   porId: Map<string, Ser>;

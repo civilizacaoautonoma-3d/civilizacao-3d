@@ -33,7 +33,20 @@ function htmlAgente(e: EntidadeRede) {
     ${barra('Frio', n.frio, '#9ad4e8')}
     ${n.dor > 0.01 ? barra('Dor', n.dor, '#d65c5c') : ''}
     <p class="memoria">Lembra de ${e.memoria.agua} lugar(es) com água, ${e.memoria.comida} arbusto(s)` +
-    `${e.memoria.carne ? ` e ${e.memoria.carne} carcaça(s)` : ''}${caca}</p>`;
+    `${e.memoria.carne ? ` e ${e.memoria.carne} carcaça(s)` : ''}${caca}</p>
+    ${mente(e)}`;
+}
+
+function mente(e: EntidadeRede) {
+  const m = e.mente;
+  if (!m) return '';
+  const crencas = m.crencas.length
+    ? m.crencas.map(c => `<li>${c.enunciado} <b>${Math.round(c.certeza * 100)}%</b></li>`).join('')
+    : '<li class="vazio">nenhuma ainda</li>';
+  const lembrancas = m.lembrancas.map(l => `<li>${l}</li>`).join('');
+  return `<p class="titulo">Acredita que</p><ul class="lista">${crencas}</ul>
+    ${lembrancas ? `<p class="titulo">Lembra</p><ul class="lista">${lembrancas}</ul>` : ''}
+    <p class="memoria">${m.episodios} lembranças · conhece ${Math.round(m.mapaConhecido * 100)}% do vale</p>`;
 }
 
 function idade(dias: number) {

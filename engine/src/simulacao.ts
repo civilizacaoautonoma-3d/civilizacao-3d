@@ -9,6 +9,8 @@ import type { Contexto, Ser } from './contexto';
 import { atualizarFrutos, crescerPasto, crescerRaizes, estragada, limparCarcacas, limparMarcas, pastoInicial,
          raizesIniciais, type Carcaca, type Marca } from './ecologia';
 import { aguaMaisProximaDoMapa, LIMITE, naAgua, terraSeca, type Ponto } from './espaco';
+import { conhecidas } from './mapa';
+import type { Episodio } from './memoria';
 
 export const TICKS_POR_SEGUNDO = 10;
 export const DT = 1 / TICKS_POR_SEGUNDO;
@@ -200,6 +202,7 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     hora: horaBase, horas: HORAS_POR_PASSO, dt: DT,
     luz: ceu.luzDoDia, noite: ceu.luzDoDia < 0.15, estacao: ceu.tempo.estacao,
     temperatura: ceu.clima.temperatura, chuva: ceu.clima.chuva, vento: ceu.clima.vento, tempestade: ceu.clima.tempestade,
+    neblina: ceu.clima.neblina, clima: ceu.clima.tipo,
     frutos: e.frutos, pasto: e.pasto, raizes: e.raizes, marcas: e.marcas, agentes: e.agentes, animais: e.animais, carcacas: e.carcacas,
     porId, grupos: new Map(), perto, contagem: {}, rand, evento: registrar,
     novoId: prefixo => `${prefixo}_${e.proximoId++}`,
@@ -260,7 +263,27 @@ const agenteParaRede = (a: Agente): EntidadeRede => ({
     carne: a.memoria.filter(m => m.tipo === 'carne').length,
   },
   caca: { ...a.caca },
+  mente: {
+    episodios: a.mente.episodios.length,
+    crencas: [...a.mente.crencas].sort((p, q) => q.certeza - p.certeza).slice(0, 5)
+      .map(c => ({ enunciado: c.enunciado, certeza: r2(c.certeza) })),
+    lembrancas: [...a.mente.episodios].sort((p, q) => q.importancia * q.forca - p.importancia * p.forca).slice(0, 3)
+      .map(descreverEpisodio),
+    mapaConhecido: r2(conhecidas(a.mapa) / a.mapa.length),
+  },
 });
+
+function descreverEpisodio(e: Episodio) {
+  const [tipo, valor] = e.sobre.split(':');
+  const alvo = tipo === 'especie' ? `um ${PERFIS[valor as Especie]?.nome ?? valor}` : tipo === 'arbusto' ? 'um arbusto' : e.sobre;
+  const dia = Math.floor(e.quando / 24) + 1;
+  const txt: Record<string, string> = {
+    atacado: `foi atacado por ${alvo}`, viu: `viu ${alvo} de perto`, passou_mal: 'passou mal com carne podre',
+    comeu: e.sobre === 'carne' ? 'comeu carne' : 'comeu frutos', cacou: `caçou ${alvo}`, falhou_caca: `não conseguiu pegar ${alvo}`,
+    fugiu: `fugiu de ${alvo}`, decepcao: 'achou um arbusto vazio', viu_morte: 'viu alguém morrer', sentiu_frio: 'passou muito frio',
+  };
+  return `dia ${dia}: ${txt[e.oQue] ?? e.oQue}${e.vezes > 1 ? ` (${e.vezes}×)` : ''}`;
+}
 
 const animalParaRede = (an: Animal, hora: number): AnimalRede => {
   const emocoes: Record<string, number> = {};

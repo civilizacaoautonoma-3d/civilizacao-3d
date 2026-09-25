@@ -16,6 +16,12 @@ export interface EntidadeRede {
   necessidades: Necessidades;
   memoria: { agua: number; comida: number; carne: number };
   caca: { tentativas: number; sucessos: number };
+  mente: {
+    episodios: number;
+    crencas: { enunciado: string; certeza: number }[];
+    lembrancas: string[];      // as mais marcantes
+    mapaConhecido: number;     // fração do vale que já viu
+  };
 }
 
 export interface AnimalRede {

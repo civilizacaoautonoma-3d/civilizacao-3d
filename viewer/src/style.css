@@ -37,6 +37,11 @@ canvas { display: block; }
 #painel .barra { flex: 1; height: 7px; background: rgba(255, 255, 255, 0.15); border-radius: 4px; overflow: hidden; }
 #painel .barra div { height: 100%; }
 #painel .memoria { margin-top: 8px; opacity: 0.75; }
+#painel .titulo { margin-top: 8px; font-weight: bold; opacity: 0.85; }
+#painel .lista { margin: 2px 0 0 14px; padding: 0; }
+#painel .lista li { margin: 1px 0; line-height: 1.3; }
+#painel .lista li b { font-weight: normal; opacity: 0.6; }
+#painel .lista .vazio { opacity: 0.5; list-style: none; margin-left: -14px; }
 
 /* ---------- Controles de toque (celular) ---------- */
 #toque { display: none; }
