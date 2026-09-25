@@ -10,6 +10,7 @@ import { criarArbustos, atualizarFrutos } from './arbustos';
 import { agentes, iniciarAgentes, aplicarEntidades, animarAgentes } from './agentes';
 import { animais, iniciarAnimais, aplicarAnimais, animarAnimais, contarAnimais } from './animais';
 import { atualizarPainel } from './painel';
+import { ehToque, toque, iniciarToque } from './toque';
 
 const EYE_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.4;
@@ -20,7 +21,7 @@ const lerp = THREE.MathUtils.lerp;
 
 // ---------- Cena, câmera e renderizador ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, ehToque ? 1.5 : 2));   // celular: menos pixels, mais FPS
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -46,7 +47,7 @@ scene.add(hemi);
 
 const sunLight = new THREE.DirectionalLight(0xfff1d6, 2.2);
 sunLight.castShadow = true;
-sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.mapSize.set(ehToque ? 1024 : 2048, ehToque ? 1024 : 2048);
 Object.assign(sunLight.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, near: 1, far: 400 });
 scene.add(sunLight, sunLight.target);
 
@@ -225,8 +226,10 @@ const msAgora = () => relogio.msMundo + (performance.now() - relogio.recebidoEm)
 const overlay = document.createElement('div');
 overlay.id = 'overlay';
 overlay.innerHTML = `<h1>PROJETO CIVILIZAÇÃO 3D</h1>
-  <p>Clique para entrar</p>
-  <p>WASD mover · Mouse olhar · Shift correr · Espaço pular · T acelerar o tempo · F ir até o próximo ser vivo · Esc sair</p>`;
+  <p>${ehToque ? 'Toque para entrar' : 'Clique para entrar'}</p>
+  <p>${ehToque
+    ? 'Joystick à esquerda para andar · arraste à direita para olhar · F ir até o próximo ser vivo · T acelerar o tempo'
+    : 'WASD mover · Mouse olhar · Shift correr · Espaço pular · T acelerar o tempo · F ir até o próximo ser vivo · Esc sair'}</p>`;
 const crosshair = document.createElement('div');
 crosshair.id = 'crosshair';
 const info = document.createElement('div');
@@ -234,14 +237,19 @@ info.id = 'info';
 document.body.append(overlay, crosshair, info);
 
 const controls = new PointerLockControls(camera, renderer.domElement);
-overlay.addEventListener('click', () => controls.lock());
+const alternarTempo = () => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ tipo: 'alternar-velocidade' })); };
+const telaDeToque = ehToque ? iniciarToque(camera, { proximo: () => irAoProximo(), tempo: alternarTempo }) : null;
+overlay.addEventListener('click', () => {
+  if (telaDeToque) { telaDeToque.ativar(); overlay.classList.add('hidden'); }
+  else controls.lock();
+});
 controls.addEventListener('lock', () => overlay.classList.add('hidden'));
 controls.addEventListener('unlock', () => overlay.classList.remove('hidden'));
 
 const keys = new Set<string>();
 window.addEventListener('keydown', e => {
   keys.add(e.code);
-  if (e.code === 'KeyT' && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ tipo: 'alternar-velocidade' }));
+  if (e.code === 'KeyT') alternarTempo();
   if (e.code === 'KeyF') irAoProximo();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
@@ -260,16 +268,16 @@ function updatePlayer(dt: number) {
   fwd.y = 0; fwd.normalize();
   right.crossVectors(fwd, UP).normalize();
 
-  const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-  const s = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+  const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + toque.frente;
+  const s = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + toque.lado;
   move.set(0, 0, 0).addScaledVector(fwd, f).addScaledVector(right, s);
 
   const inWater = heightAt(player.pos.x, player.pos.z) < WATER_LEVEL - 0.6;
-  let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 9 : 5;
+  let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') || toque.correr ? 9 : 5;
   if (inWater) speed *= 0.45;
 
   if (move.lengthSq() > 0) {
-    move.normalize();
+    if (move.lengthSq() > 1) move.normalize();   // o joystick permite andar devagar
     player.pos.x += move.x * speed * dt;
     player.pos.z += move.z * speed * dt;
     bobTime += dt * speed;
@@ -288,7 +296,7 @@ function updatePlayer(dt: number) {
   player.pos.x = THREE.MathUtils.clamp(player.pos.x, -lim, lim);
   player.pos.z = THREE.MathUtils.clamp(player.pos.z, -lim, lim);
 
-  if (keys.has('Space') && player.onGround) { player.vy = inWater ? 3 : 8; player.onGround = false; }
+  if ((keys.has('Space') || toque.pular) && player.onGround) { player.vy = inWater ? 3 : 8; player.onGround = false; }
   player.vy -= 25 * dt;
   player.pos.y += player.vy * dt;
   const floor = Math.max(heightAt(player.pos.x, player.pos.z), WATER_LEVEL - 1.3);
@@ -410,7 +418,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
-  if (controls.isLocked) updatePlayer(dt);
+  if (controls.isLocked || toque.ativo) updatePlayer(dt);
   animarAgentes(dt);
   animarAnimais(dt, camera);
   atualizarPainel(camera);
