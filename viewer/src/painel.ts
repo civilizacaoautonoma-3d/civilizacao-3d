@@ -23,8 +23,9 @@ const NOME_EMOCAO: Record<string, [string, string]> = {
 function htmlAgente(e: EntidadeRede) {
   const n = e.necessidades;
   const caca = e.caca.tentativas > 0 ? ` · caçou ${e.caca.sucessos} de ${e.caca.tentativas} tentativas` : '';
-  return `<h3>${e.nome} <small>${e.sexo === 'M' ? 'homem' : 'mulher'}</small></h3>
+  return `<h3>${e.nome} <small>${e.sexo === 'M' ? 'homem' : 'mulher'}${e.sentimentos?.jeito.length ? ' · ' + e.sentimentos.jeito.join(', ') : ''}</small></h3>
     <p class="intencao">${e.intencao}</p>
+    ${sentimentos(e)}
     ${barra('Fome', n.fome, '#e0763c')}
     ${barra('Sede', n.sede, '#3c9ee0')}
     ${barra('Sono', n.sono, '#8b6fd6')}
@@ -35,6 +36,26 @@ function htmlAgente(e: EntidadeRede) {
     <p class="memoria">Lembra de ${e.memoria.agua} lugar(es) com água, ${e.memoria.comida} arbusto(s)` +
     `${e.memoria.carne ? ` e ${e.memoria.carne} carcaça(s)` : ''}${caca}</p>
     ${mente(e)}`;
+}
+
+const NOME_EMO: Record<string, [string, string]> = {
+  alegria: ['Alegria', '#e8c547'], confianca: ['Confiança', '#6fc4b0'], medo: ['Medo', '#d65c5c'], surpresa: ['Surpresa', '#5dade2'],
+  tristeza: ['Tristeza', '#5b7fc4'], nojo: ['Nojo', '#8bb04a'], raiva: ['Raiva', '#c0392b'], antecipacao: ['Antecipação', '#e0a03c'],
+};
+const NOME_HUMOR: Record<string, [string, string]> = {
+  ansiedade: ['Ansiedade', '#d68a5c'], solidao: ['Solidão', '#8b6fd6'], tedio: ['Tédio', '#9a9a9a'],
+  satisfacao: ['Satisfação', '#9bd46a'], tristeza: ['Melancolia', '#5b7fc4'], esperanca: ['Esperança', '#e8c547'],
+};
+
+function sentimentos(e: EntidadeRede) {
+  const s = e.sentimentos;
+  if (!s) return '';
+  const agora = s.derivada ? `<p class="titulo">Sente agora: ${s.derivada}</p>` : '';
+  const emo = Object.entries(s.emocoes).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]).slice(0, 4)
+    .map(([k, v]) => NOME_EMO[k] ? barra(NOME_EMO[k][0], v, NOME_EMO[k][1]) : '').join('');
+  const humor = Object.entries(s.humor).filter(([k, v]) => v > 0.2 || k === 'satisfacao')
+    .map(([k, v]) => NOME_HUMOR[k] ? barra(NOME_HUMOR[k][0], v, NOME_HUMOR[k][1]) : '').join('');
+  return `${agora}${emo ? `<p class="titulo">Emoções</p>${emo}` : ''}<p class="titulo">Humor</p>${humor}`;
 }
 
 function mente(e: EntidadeRede) {

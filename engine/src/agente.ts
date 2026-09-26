@@ -1,4 +1,4 @@
-import { ARBUSTOS, ARVORES, heightAt, obstaculosPerto, resolverColisao, type Arvore } from '../../shared/mundo';
+import { ARBUSTOS, ARVORES, heightAt, mulberry32, obstaculosPerto, resolverColisao, type Arvore } from '../../shared/mundo';
 import { PERFIS, type Especie } from '../../shared/especies';
 import type { Acao, Necessidades } from '../../shared/protocolo';
 import { atualizarCorpo, causaDaMorte, novoCorpo } from './corpo';
@@ -9,10 +9,12 @@ import { distancia, pertoDaAgua, pontoAleatorio, procurarAgua, terraSeca, type P
 import { DESCONHECIDO, celulaMapa, marcarAgua, novoMapa, observar, rota } from './mapa';
 import { crenca, esquecer, expectativa, exposicaoSegura, novaMente, perigoDoLugar, refletir, registrarEpisodio,
          type Mente, type TipoEpisodio } from './memoria';
+import { atualizarSentimentos, emocaoDominante, novaPersonalidade, novosSentimentos, sentir, viver,
+         type Emocao, type Personalidade, type Sentimentos } from './emocoes';
 
 export type { Contexto } from './contexto';
 
-export type Objetivo = 'beber' | 'comer' | 'cacar' | 'fugir' | 'dormir' | 'descansar' | 'abrigar' | 'explorar';
+export type Objetivo = 'beber' | 'comer' | 'cacar' | 'fugir' | 'dormir' | 'descansar' | 'abrigar' | 'explorar' | 'aproximar';
 
 // lugares com recursos (o "mapa" de onde tem água e comida)
 export interface Lembranca {
@@ -50,6 +52,10 @@ export interface Agente {
   percebidos: Percebido[];
   refletiuEm: number; ultimaDecepcao: number; ultimoNojo: number;
   motivoAbrigo: string | null;
+  // Fase 8
+  personalidade: Personalidade;
+  sentimentos: Sentimentos;
+  novidade: number;            // lugares novos vistos na última olhada (espanta o tédio)
 }
 
 const RAIO = 0.35;
@@ -77,10 +83,18 @@ export function completarAgente(a: Partial<Agente> & Pick<Agente, 'corpo'>): Age
   a.mente ??= novaMente(); a.mente.seguro ??= {};
   a.mapa ??= novoMapa(); a.rota ??= null; a.replanos ??= 0; a.percebidos ??= [];
   a.refletiuEm ??= -1e9; a.ultimaDecepcao ??= -1e9; a.ultimoNojo ??= -1e9; a.motivoAbrigo ??= null;
+  // cada um nasce com seu jeito (sorteado a partir do próprio id: sempre o mesmo para o mesmo agente)
+  a.personalidade ??= novaPersonalidade(mulberry32(hashTexto(a.id ?? '') * 977 + 13));
+  a.sentimentos ??= novosSentimentos();
+  a.novidade ??= 0;
   return a as Agente;
 }
 
 const ev = (a: Agente, ctx: Contexto, texto: string) => ctx.evento(`${a.nome} ${texto}`);
+
+function hashTexto(t: string) { let h = 7; for (const c of t) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
+
+const sinta = (a: Agente, e: Emocao, intensidade: number) => sentir(a.sentimentos, a.personalidade, e, intensidade);
 
 function episodio(a: Agente, ctx: Contexto, oQue: TipoEpisodio, sobre: string, valencia: number, intensidade: number) {
   return registrarEpisodio(a.mente, {
@@ -102,6 +116,8 @@ function lembrar(a: Agente, l: Lembranca, ctx: Contexto) {
     if (k) ev(a, ctx, `encontrou a carcaça de um ${PERFIS[k.especie].nome}`);
   }
   if (a.memoria.length > 60) { a.memoria.sort((p, q) => q.forca - p.forca); a.memoria.length = 60; }
+  if (l.tipo !== 'agua' && l.frutos > 0) sinta(a, 'alegria', 0.25 + a.corpo.fome * 0.3);   // achou comida nova
+  else if (l.tipo === 'agua') sinta(a, 'alegria', 0.2 + a.corpo.sede * 0.3);
 }
 
 // ---------- Percepção: sentidos com alcance e erro ----------
@@ -145,7 +161,7 @@ function perceber(a: Agente, ctx: Contexto) {
     return Math.abs(Math.atan2(Math.sin(ang), Math.cos(ang))) <= meioCone;
   };
 
-  observar(a.mapa, a.x, a.z, alcance, a.rotacao, meioCone);
+  a.novidade = observar(a.mapa, a.x, a.z, alcance, a.rotacao, meioCone);
 
   ARBUSTOS.forEach((b, i) => {
     if (!ve(b.x, b.z)) return;
@@ -192,7 +208,9 @@ function perceber(a: Agente, ctx: Contexto) {
   for (const p of a.percebidos) {
     const o = ctx.porId.get(p.id) as Animal;
     const medo = medoDaEspecie(a, p.especie, ctx);
-    const perigo = raioDaSituacao(p, o, a, alcance, ctx) * medo * (p.ouvido ? 0.7 : 1);
+    // coragem encurta a distância do susto; ansiedade acumulada deixa em alerta
+    const temperamento = (1.3 - 0.6 * a.personalidade.coragem) * (1 + 0.4 * a.sentimentos.humor.ansiedade);
+    const perigo = raioDaSituacao(p, o, a, alcance, ctx) * medo * (p.ouvido ? 0.7 : 1) * temperamento;
     if (p.d < perigo) { if (p.d < dAmeaca) { dAmeaca = p.d; ameaca = p; } continue; }
     if (p.ouvido) { if (medo > 0.3) barulho = p; continue; }
     // um lobo ou javali visto de perto que não fez nada: da próxima vez assusta um pouco menos
@@ -203,12 +221,21 @@ function perceber(a: Agente, ctx: Contexto) {
     if (presaPossivel && p.certeza > 0.4 && p.d < dPresa && medo < 0.4) { dPresa = p.d; presa = p; }
   }
   // um barulho de bicho na periferia chama a atenção: vira para ver
-  if (!ameaca && barulho && parado) a.rotacao = Math.atan2(barulho.x - a.x, barulho.z - a.z);
+  if (!ameaca && barulho && parado) { a.rotacao = Math.atan2(barulho.x - a.x, barulho.z - a.z); sinta(a, 'surpresa', 0.4); }
+
+  // contágio emocional: a expressão do outro (medo, alegria, tristeza) contagia quem vê
+  for (const o of ctx.agentes) {
+    if (o === a || !o.vivo || !ve(o.x, o.z) || Math.hypot(o.x - a.x, o.z - a.z) > 20) continue;
+    const { emocao, intensidade } = emocaoDominante(o.sentimentos);
+    if (emocao && (emocao === 'medo' || emocao === 'alegria' || emocao === 'tristeza'))
+      sinta(a, emocao, intensidade * 0.4 * (0.5 + a.personalidade.amabilidade));
+  }
 
   const t = ameaca as Percebido | null;
   if (t) {
     const nome = PERFIS[t.especie].nome;
     if (!a.ameaca && ctx.hora - a.ultimoSusto > 3) ev(a, ctx, t.ouvido ? `ouviu algo que parecia um ${nome} e se assustou` : `viu um ${nome} e ficou com medo`);
+    sinta(a, 'medo', 0.4 + 0.6 * (1 - Math.min(1, t.d / 15)));
     a.ultimoSusto = ctx.hora;
     a.ameaca = { id: t.id, x: t.x, z: t.z };
   } else {
@@ -377,12 +404,16 @@ export function ferirAgente(a: Agente, dano: number, agressor: Animal, ctx: Cont
   // a dor ensina: agora ele sabe o que aquele bicho faz (e a surpresa marca ainda mais)
   const surpresa = medoAntes < 0.5;
   episodio(a, ctx, 'atacado', `especie:${agressor.especie}`, -1, surpresa ? 1 : 0.85);
+  sinta(a, 'medo', 0.9);
+  if (surpresa) sinta(a, 'surpresa', 0.9);
+  // quem é corajoso e ainda tem forças sente raiva — e revida com mais vontade
+  if (a.corpo.energia > 0.3) sinta(a, 'raiva', 0.3 + 0.6 * a.personalidade.coragem);
   if (ctx.hora - a.ultimaMordida > 0.5)
     ev(a, ctx, `foi ${golpe}${dormia ? ' enquanto dormia' : ''}${surpresa ? ' — foi pego de surpresa' : ''}`);
   a.ultimaMordida = ctx.hora;
   // reage golpeando: o animal aprende que este humano é perigoso
-  if (a.corpo.energia > 0.2 && ctx.rand() < 0.5)
-    ferirAnimal(agressor, 0.15, { id: a.id, x: a.x, z: a.z, tipo: 'humano', nome: a.nome }, ctx);
+  if (a.corpo.energia > 0.2 && ctx.rand() < 0.3 + 0.5 * a.sentimentos.emocoes.raiva)
+    ferirAnimal(agressor, 0.1 + 0.1 * a.sentimentos.emocoes.raiva, { id: a.id, x: a.x, z: a.z, tipo: 'humano', nome: a.nome }, ctx);
 }
 
 // ---------- Decisão por utilidade ----------
@@ -399,18 +430,27 @@ function decidir(a: Agente, ctx: Contexto) {
   const atacandoMe = !!bicho && ehAnimal(bicho) && bicho.alvoId === a.id && (bicho.objetivo === 'cacar' || bicho.objetivo === 'enfrentar');
   // superstição: acredita que este tempo (ou a noite) traz perigo
   const receio = Math.max(crenca(a.mente, `contexto:${ctx.clima}`), ctx.noite ? crenca(a.mente, 'contexto:noite') : 0);
+  // emoções, humores e personalidade pesam em tudo
+  const P = a.personalidade, E = a.sentimentos.emocoes, H = a.sentimentos.humor;
+  const outro = ctx.agentes.find(o => o !== a && o.vivo);
   const notas: Record<Objetivo, number> = {
     fugir: a.ameaca ? (atacandoMe ? 3 : 1.1) : 0,
     beber: Math.pow(c.sede, 1.4) * 1.2 + (c.sede > 0.9 ? 0.5 : 0),
-    comer: Math.pow(c.fome, 1.4) * (temComida ? 1 : 0.7) + (c.fome > 0.95 ? 0.3 : 0),
-    cacar: a.presaVista && c.energia > 0.3 ? Math.pow(c.fome, 1.4) * (0.4 + 0.8 * taxaCaca) : 0,
+    // o cuidadoso come antes de a fome apertar
+    comer: Math.pow(c.fome, 1.4) * (temComida ? 1 : 0.7) + (c.fome > 0.95 ? 0.3 : 0) + (c.fome > 0.4 ? 0.12 * P.conscienciosidade : 0),
+    cacar: a.presaVista && c.energia > 0.3 ? Math.pow(c.fome, 1.4) * (0.4 + 0.8 * taxaCaca) * (0.7 + 0.4 * P.coragem + 0.2 * P.abertura) : 0,
     // de dia só cochila se estiver muito cansado; à noite o sono pesa mais
     dormir: ((ctx.noite ? c.sono * 1.2 : c.sono > 0.85 ? c.sono * 0.6 : 0) + (c.sono > 0.9 ? 0.5 : 0)) * (urgente ? 0.2 : 1),
-    descansar: Math.pow(1 - c.energia, 2) * 1.2,
-    abrigar: c.frio * 0.9 + (ctx.chuva > 0.3 && !a.abrigado ? 0.2 : 0) + receio * 0.6,
-    explorar: (0.2 + ctx.rand() * 0.1) * (1 - receio * 0.7),
+    // a tristeza pesa no corpo: vontade de ficar parado
+    descansar: Math.pow(1 - c.energia, 2) * 1.2 + H.tristeza * 0.25 + E.tristeza * 0.15,
+    abrigar: c.frio * 0.9 + (ctx.chuva > 0.3 && !a.abrigado ? 0.2 : 0) + receio * 0.6 + (ctx.noite ? H.ansiedade * 0.2 : 0),
+    // explorar: curiosidade e tédio empurram; tristeza, medo e ansiedade seguram
+    explorar: (0.2 + ctx.rand() * 0.1) * (1 - receio * 0.7) * (0.6 + 0.8 * P.abertura) * (1 + H.tedio)
+      * (1 - 0.6 * H.tristeza) * (1 - 0.4 * H.ansiedade) * (1 + 0.3 * E.alegria),
+    // solidão: procurar companhia (mais forte nos sociáveis) — um impulso, não uma regra social
+    aproximar: outro && distancia(a, outro) > 4 ? H.solidao * (0.3 + 0.7 * P.extroversao) * 0.8 : 0,
   };
-  if (a.objetivo) notas[a.objetivo] += 0.1;   // tende a continuar o que está fazendo
+  if (a.objetivo) notas[a.objetivo] += 0.05 + 0.1 * P.conscienciosidade;   // o cuidadoso persiste no que começou
   let escolha: Objetivo = 'explorar';
   for (const k of Object.keys(notas) as Objetivo[]) if (notas[k] > notas[escolha]) escolha = k;
   if (escolha !== a.objetivo) {
@@ -422,6 +462,7 @@ function decidir(a: Agente, ctx: Contexto) {
     }
     if (escolha === 'fugir') a.inicioFuga = ctx.hora;
     else a.presa = null;
+    if (escolha === 'comer' && temComida) sinta(a, 'antecipacao', 0.3 + c.fome * 0.3);
     a.motivoAbrigo = escolha === 'abrigar' && receio > c.frio && receio > 0.3
       ? a.mente.crencas.find(k => k.chave === `contexto:${ctx.clima}` || (ctx.noite && k.chave === 'contexto:noite'))?.enunciado ?? null
       : null;
@@ -442,6 +483,7 @@ function comerCarne(a: Agente, ctx: Contexto) {
   // de perto sente o cheiro de podre; quem já passou mal tem nojo e não come
   if (d < 3 && estragada(k, ctx.hora) && crenca(a.mente, 'aversao:carne-podre') > 0.4) {
     if (ctx.hora - a.ultimoNojo > 12) ev(a, ctx, 'sentiu cheiro de carne podre e sentiu nojo');
+    sinta(a, 'nojo', 0.7);
     a.ultimoNojo = ctx.hora;
     desistirDeAlcancar(a, 'carne', k.id, ctx);
     a.alvoCarne = -1; a.destino = null;
@@ -466,9 +508,10 @@ function comerCarne(a: Agente, ctx: Contexto) {
     c.saude = Math.max(0, c.saude - 0.06);
     c.dor = Math.min(1, c.dor + 0.2);
     episodio(a, ctx, 'passou_mal', 'carne-podre', -0.8, 0.8);
+    sinta(a, 'nojo', 0.8); sinta(a, 'tristeza', 0.2);
     if (!a.jaPassouMal) ev(a, ctx, 'passou mal depois de comer carne estragada');
     a.jaPassouMal = true;
-  } else episodio(a, ctx, 'comeu', 'carne', 0.4, 0.3);
+  } else { episodio(a, ctx, 'comeu', 'carne', 0.4, 0.3); sinta(a, 'alegria', 0.2 + c.fome * 0.5); }
   if (mem) { mem.frutos = k.porcoes; mem.quando = ctx.hora; }
   if (c.fome < 0.1) { a.objetivo = null; a.alvoCarne = -1; }
 }
@@ -486,6 +529,8 @@ function executar(a: Agente, ctx: Contexto) {
       if (!t || !s || !s.vivo || d > 25 || !perigoso) {
         a.ameaca = null; a.objetivo = null; a.destino = null;
         a.acao = 'parado'; a.intencao = 'recuperando o fôlego';
+        // o perigo passou sem machucar: alívio
+        a.sentimentos.emocoes.medo *= 0.3; sinta(a, 'alegria', 0.3); viver(a.sentimentos, 'alívio', ctx.hora, 0.5);
         return;
       }
       t.x = s.x; t.z = s.z;
@@ -509,7 +554,11 @@ function executar(a: Agente, ctx: Contexto) {
       if (!alvo || !alvo.vivo || !ehAnimal(alvo)) return fim('perdeu a presa');
       const nome = PERFIS[alvo.especie].nome;
       const d = Math.hypot(alvo.x - a.x, alvo.z - a.z);
-      const falhou = (motivo: string) => { episodio(a, ctx, 'falhou_caca', `especie:${alvo.especie}`, -0.1, 0.2); fim(motivo); };
+      const falhou = (motivo: string) => {
+        episodio(a, ctx, 'falhou_caca', `especie:${alvo.especie}`, -0.1, 0.2);
+        sinta(a, 'raiva', 0.25); sinta(a, 'tristeza', 0.1); viver(a.sentimentos, 'frustração', ctx.hora, 0.5);
+        fim(motivo);
+      };
       if ((ocultoAnimal(alvo) && d > 2) || d > 8 + 22 * ctx.luz) return falhou(`perdeu o ${nome} de vista`);
       if (ctx.hora - a.inicioCaca > 0.5 || c.energia < 0.15) return falhou('desistiu de caçar, cansado');
       if (d <= RAIO + PERFIS[alvo.especie].raio + 0.5) {
@@ -524,6 +573,7 @@ function executar(a: Agente, ctx: Contexto) {
             fim(alvo.especie === 'peixe' ? 'pegou um peixe com as mãos' : `caçou um ${nome}`);
             a.caca.sucessos++; registroDe().sucessos++;
             episodio(a, ctx, 'cacou', `especie:${alvo.especie}`, 0.6, 0.6);
+            sinta(a, 'alegria', 0.8); viver(a.sentimentos, 'orgulho', ctx.hora, 2);
             ev(a, ctx, alvo.especie === 'peixe' ? 'pegou um peixe com as mãos' : `caçou um ${nome}`);
             lembrar(a, { tipo: 'carne', x: k.x, z: k.z, ref: k.id, frutos: k.porcoes, quando: ctx.hora, forca: 1 }, ctx);
             a.objetivo = 'comer'; a.alvoCarne = k.id;
@@ -593,12 +643,14 @@ function executar(a: Agente, ctx: Contexto) {
         a.rotacao = Math.atan2(b.x - a.x, b.z - a.z);
         a.ocupadoAte = ctx.hora + 0.08;   // ~5 minutos do mundo
         episodio(a, ctx, 'comeu', `arbusto:${a.alvoRef}`, 0.3, 0.25);   // doce: reforça a volta a este arbusto
+        sinta(a, 'alegria', 0.15 + c.fome * 0.5);
         if (mem) { mem.frutos = ctx.frutos[a.alvoRef]; mem.quando = ctx.hora; }
         if (c.fome < 0.1) { a.objetivo = null; a.alvoRef = -1; }
       } else {
         // esperava frutos e não havia: decepção (a expectativa desse arbusto cai)
         if (mem && mem.frutos > 0) {
           episodio(a, ctx, 'decepcao', `arbusto:${a.alvoRef}`, -0.3, 0.35);
+          sinta(a, 'tristeza', 0.25); sinta(a, 'surpresa', 0.3); viver(a.sentimentos, 'decepção', ctx.hora, 1);
           if (ctx.hora - a.ultimaDecepcao > 12) ev(a, ctx, 'ficou decepcionado: o arbusto estava vazio');
           a.ultimaDecepcao = ctx.hora;
         }
@@ -624,7 +676,9 @@ function executar(a: Agente, ctx: Contexto) {
       ev(a, ctx, a.abrigado ? 'foi dormir sob uma árvore' : 'foi dormir');
       // no sono, a mente junta as lembranças e tira conclusões (algumas erradas)
       if (ctx.hora - a.refletiuEm > 12) {
-        refletir(a.mente, ctx.hora, t => ev(a, ctx, t), ctx.rand);
+        // quem é ansioso liga mais coincidências; quem é aberto questiona mais
+        const propensao = 0.5 + a.personalidade.neuroticismo - 0.3 * a.personalidade.abertura;
+        refletir(a.mente, ctx.hora, t => ev(a, ctx, t), ctx.rand, propensao);
         a.refletiuEm = ctx.hora;
       }
       return;
@@ -649,6 +703,23 @@ function executar(a: Agente, ctx: Contexto) {
         if (!a.destino) { a.acao = 'parado'; return; }
       }
       if (irAte(a, ctx)) { a.destino = null; a.abrigado = arvoreMaisProxima(a, 2.2) !== null; }
+      return;
+    }
+
+    case 'aproximar': {
+      const outro = ctx.agentes.find(o => o !== a && o.vivo);
+      if (!outro) { a.objetivo = null; return; }
+      const d = distancia(a, outro);
+      if (d < 3) {
+        a.destino = null; a.acao = 'parado'; a.intencao = `fazendo companhia a ${outro.nome}`;
+        a.rotacao = Math.atan2(outro.x - a.x, outro.z - a.z);
+        if (a.sentimentos.humor.solidao < 0.05) a.objetivo = null;
+        return;
+      }
+      // vai até onde o outro está (e corrige o rumo se ele andou)
+      if (!a.destino || Math.hypot(a.destino.x - outro.x, a.destino.z - outro.z) > 5) definirDestino(a, ctx, { x: outro.x, z: outro.z });
+      a.intencao = `procurando ${outro.nome}`;
+      if (irAte(a, ctx)) a.destino = null;
       return;
     }
 
@@ -682,6 +753,14 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
   for (const m of a.memoria) m.forca -= ctx.horas / 120;   // sem rever, esquece um lugar em ~5 dias
   if (a.memoria.some(m => m.forca <= 0)) a.memoria = a.memoria.filter(m => m.forca > 0);
   esquecer(a.mente, ctx.horas);
+  const companheiro = ctx.agentes.find(o => o !== a && o.vivo);
+  atualizarSentimentos(a.sentimentos, a.personalidade, {
+    horas: ctx.horas, hora: ctx.hora,
+    fome: a.corpo.fome, sede: a.corpo.sede, frio: a.corpo.frio, dor: a.corpo.dor, energia: a.corpo.energia, saude: a.corpo.saude,
+    companhiaPerto: !!companheiro && Math.hypot(companheiro.x - a.x, companheiro.z - a.z) < 6,
+    companhiaViva: !!companheiro, novidade: a.novidade, ameacado: a.ameaca !== null,
+  });
+  a.novidade = 0;
 
   if (a.corpo.saude <= 0) {
     a.vivo = false; a.acao = 'morto';
@@ -692,7 +771,10 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
     for (const o of ctx.agentes) {
       if (o === a || !o.vivo || Math.hypot(o.x - a.x, o.z - a.z) > 30) continue;
       episodio(o, ctx, 'viu_morte', `agente:${a.id}`, -1, 1);
-      ev(o, ctx, `viu ${a.nome} morrer`);
+      sentir(o.sentimentos, o.personalidade, 'tristeza', 1);
+      o.sentimentos.humor.tristeza = Math.min(1, o.sentimentos.humor.tristeza + 0.5);
+      viver(o.sentimentos, 'luto', ctx.hora, 72);
+      ev(o, ctx, `viu ${a.nome} morrer e ficou de luto`);
     }
     return;
   }

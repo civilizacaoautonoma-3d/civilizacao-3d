@@ -22,6 +22,16 @@ export interface EntidadeRede {
     lembrancas: string[];      // as mais marcantes
     mapaConhecido: number;     // fração do vale que já viu
   };
+  sentimentos: {
+    dominante: string | null;  // emoção básica mais forte agora (aparece no corpo)
+    intensidade: number;
+    derivada: string | null;   // alívio, frustração, orgulho, decepção, luto…
+    emocoes: Record<string, number>;
+    humor: Record<string, number>;
+    afeto: { valencia: number; ativacao: number; controle: number };
+    personalidade: Record<string, number>;
+    jeito: string[];           // os traços mais marcantes, em palavras
+  };
 }
 
 export interface AnimalRede {

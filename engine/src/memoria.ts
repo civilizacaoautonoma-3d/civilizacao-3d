@@ -107,7 +107,7 @@ function crer(m: Mente, chave: string, enunciado: string, certeza: number, hora:
   avisar(`passou a acreditar que ${enunciado}`);
 }
 
-export function refletir(m: Mente, hora: number, avisar: (t: string) => void, rand: () => number) {
+export function refletir(m: Mente, hora: number, avisar: (t: string) => void, rand: () => number, propensao = 1) {
   // 1) espécies que machucaram (ou só assustaram muito)
   const especies = new Set(m.episodios.filter(e => e.sobre.startsWith('especie:')).map(e => e.sobre));
   for (const sobre of especies) {
@@ -134,7 +134,7 @@ export function refletir(m: Mente, hora: number, avisar: (t: string) => void, ra
   const hoje = ruins.filter(e => hora - e.quando < 24);
   for (const e of hoje) {
     const pista = e.contexto.clima !== 'Limpo' && e.contexto.clima !== 'Poucas nuvens' ? e.contexto.clima : e.contexto.noite ? 'noite' : null;
-    if (!pista || rand() > 0.35 * e.intensidade) continue;
+    if (!pista || rand() > 0.35 * e.intensidade * propensao) continue;
     crer(m, `contexto:${pista}`, SUPERSTICAO[pista] ?? `${pista} traz perigo`, 0.25 + 0.3 * e.intensidade, hora, avisar);
   }
   // 5) crenças que não se confirmam perdem força, devagar (a mente se apega ao que já acredita)

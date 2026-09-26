@@ -11,6 +11,7 @@ import { atualizarFrutos, crescerPasto, crescerRaizes, estragada, limparCarcacas
 import { aguaMaisProximaDoMapa, LIMITE, naAgua, terraSeca, type Ponto } from './espaco';
 import { conhecidas } from './mapa';
 import type { Episodio } from './memoria';
+import { descreverPersonalidade, emocaoDominante } from './emocoes';
 
 export const TICKS_POR_SEGUNDO = 10;
 export const DT = 1 / TICKS_POR_SEGUNDO;
@@ -281,6 +282,17 @@ const agenteParaRede = (a: Agente): EntidadeRede => ({
       .map(descreverEpisodio),
     mapaConhecido: r2(conhecidas(a.mapa) / a.mapa.length),
   },
+  sentimentos: (() => {
+    const s = a.sentimentos, dom = emocaoDominante(s);
+    const arred = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, r2(v)]));
+    return {
+      dominante: dom.emocao, intensidade: r2(dom.intensidade), derivada: s.derivada,
+      emocoes: arred(s.emocoes), humor: arred(s.humor),
+      afeto: { valencia: r2(s.afeto.valencia), ativacao: r2(s.afeto.ativacao), controle: r2(s.afeto.controle) },
+      personalidade: arred(a.personalidade as unknown as Record<string, number>),
+      jeito: descreverPersonalidade(a.personalidade, a.sexo),
+    };
+  })(),
 });
 
 function descreverEpisodio(e: Episodio) {

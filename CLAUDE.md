@@ -21,6 +21,7 @@ engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 80
   src/agente.ts    humanos: percepção com erro, avaliação por memória, decisão por utilidade, fuga, caça, navegação
   src/memoria.ts   memória episódica, expectativa por semelhança, crenças refletidas no sono (inclusive erradas)
   src/mapa.ts      mapa mental do terreno (grade de 5 m) e rota A* sobre o que o agente acredita saber
+  src/emocoes.ts   personalidade (Big Five + coragem, dominância), 8 emoções básicas, humores e afeto central
   src/corpo.ts     fisiologia humana: fome, sede, sono, energia, frio, dor, saúde, morte
   src/animal.ts    animais (sem LLM): corpo, emoções da espécie, memória associativa, fuga, caça, reprodução
   src/ecologia.ts  pasto e raízes em grade de 10 m, frutos (crescem e apodrecem), carcaças, marcas de cheiro dos lobos
@@ -53,6 +54,12 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 - Fase 7: perceber não é entender. O medo de uma espécie = instinto leve + expectativa das memórias (viés de
   negatividade) + crenças. Crenças nascem na reflexão do sono e podem ser superstições; enfraquecem devagar.
   O mapa mental supõe o desconhecido passável; esbarrar na água ensina (e a água aprendida não se desfaz).
+- Fase 8: personalidade fixa sorteada pelo id (Aru e Nia são diferentes). Emoções básicas (alegria, confiança, medo,
+  surpresa, tristeza, nojo, raiva, antecipação) nascem da avaliação de acontecimentos e se apagam em minutos/horas;
+  humores (ansiedade, solidão, tédio, satisfação, melancolia, esperança) acumulam em dias; emoções complexas
+  (alívio, frustração, orgulho, decepção, luto). Tudo pesa nas decisões (coragem x distância do susto, curiosidade e
+  tédio x explorar, tristeza x ficar parado, solidão x procurar o outro). Contágio emocional ao ver o outro.
+  Expressão visível: postura e símbolo acima da cabeça.
 - Ações primitivas; comportamentos sociais devem emergir, nunca ser programados como comandos prontos.
 - Estado atual: 2 agentes provisórios (Aru e Nia), personagens são cápsulas até a Fase 4 (Blender).
 - Animais (Fase 6): coelhos (colônias, se escondem em arbustos, dormem na toca), cervos (manadas que migram atrás
@@ -81,8 +88,8 @@ Pendências: cervos caem de ~24 para ~8 ao longo do ano (migrantes seguram abaix
 contra humanos ~35 vezes por ano (quase sempre avisos, sem mortes); biomas. Nojo como emoção fica para a Fase 8.
 
 ## Git
-- Commitar direto no `main` ao final de cada desenvolvimento validado, com mensagem em português descrevendo o que mudou.
-- Não fazer push: o usuário faz. Ao concluir uma fase, avisar que ela pode ser enviada ao GitHub.
+- Ao final de cada desenvolvimento validado: commit no `main` (mensagem em português) e `git push origin main`.
+- Nunca `--force`. Se o push falhar, avisar o usuário. Ao concluir uma fase, avisar que foi concluída e enviada.
 - `engine/data/` não é versionado (é o mundo do usuário).
 
 ## Como validar mudanças no motor
