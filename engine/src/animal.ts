@@ -49,6 +49,8 @@ export interface Animal {
   territorio: Ponto | null;                 // centro do território (lobos)
   ultimaMarca: number; migrouEm: number; ultimaBriga: number;
   dispersao: Ponto | null;                  // para onde está se mudando (sobrevive a um susto no caminho)
+  vooX: number; vooZ: number;               // pássaros: média do deslocamento recente (vai e volta não é voar)
+  objetivoDesde: number;                    // quando começou o objetivo atual (compromisso: não muda de ideia a toda hora)
 }
 
 const lim = (v: number) => Math.min(1, Math.max(0, v));
@@ -81,7 +83,7 @@ export function completarAnimal(an: Partial<Animal> & Pick<Animal, 'corpo' | 'es
   an.corpo.frio ??= 0; an.corpo.gordura ??= 0.3;
   an.motivo ??= null; an.arbustoVisto ??= -1; an.rivalVisto ??= null; an.curiosoDe ??= null;
   an.abrigado ??= false; an.amontoado ??= false; an.territorio ??= null;
-  an.ultimaMarca ??= 0; an.migrouEm ??= -1e9; an.ultimaBriga ??= -1e9; an.dispersao ??= null;
+  an.ultimaMarca ??= 0; an.migrouEm ??= -1e9; an.ultimaBriga ??= -1e9; an.dispersao ??= null; an.vooX ??= 0; an.vooZ ??= 0; an.objetivoDesde ??= 0;
   for (const e of PERFIS[an.especie].emocoes) an.emocoes[e] ??= 0;
   return an as Animal;
 }
@@ -521,7 +523,9 @@ function mover(an: Animal, alvo: Ponto, vel: number, ctx: Contexto, perto = 0.5)
   const meta = an.desvio ?? alvo;
   const dx = meta.x - an.x, dz = meta.z - an.z, dist = Math.hypot(dx, dz);
   if (!an.desvio && dist < perto) return 'chegou';
-  const passo = Math.min(dist, vel * ctx.dt);
+  // pássaro: para andar poucos metros vai pulando no chão; só voa para ir mais longe
+  const pulando = PERFIS[an.especie].voa && dist < 6 && an.acao !== 'correndo';
+  const passo = Math.min(dist, (pulando ? Math.min(vel, 0.8) : vel) * ctx.dt);
   const nx = an.x + (dx / dist) * passo, nz = an.z + (dz / dist) * passo;
   if (PERFIS[an.especie].voa) {
     // voando: passa por cima da água, das pedras e das árvores
@@ -692,6 +696,9 @@ function decidir(an: Animal, ctx: Contexto) {
     const d = distancia(an, g.lider);
     if (d > p.coesao) notas.seguir = Math.min(0.8, (d - p.coesao) / 15 + 0.3);
   }
+  // indo beber ou comer com necessidade de verdade: não larga a viagem para correr atrás do grupo
+  if (notas.seguir && ((an.objetivo === 'beber' && c.sede > 0.3) || (an.objetivo === 'comer' && c.fome > 0.3)) && (!mae || mat >= 0.3))
+    notas.seguir *= 0.3;
   if (an.dispersao) notas.dispersar = 0.6;
 
   // migração: o líder da manada leva o grupo para onde há pasto
@@ -714,13 +721,15 @@ function decidir(an: Animal, ctx: Contexto) {
   }
   notas.vagar = 0.15 + ctx.rand() * 0.1;
 
-  if (an.objetivo && notas[an.objetivo] !== undefined) notas[an.objetivo]! += 0.1;
+  // compromisso: recém-começada, uma tarefa só é trocada por algo bem mais forte (ou por uma emergência)
+  if (an.objetivo && notas[an.objetivo] !== undefined)
+    notas[an.objetivo]! += ctx.hora - an.objetivoDesde < 0.3 ? 0.4 : 0.1;
   let escolha: ObjetivoAnimal = 'vagar';
   for (const k of Object.keys(notas) as ObjetivoAnimal[]) if (notas[k]! > notas[escolha]!) escolha = k;
 
   if (escolha !== an.objetivo || (escolha === 'enfrentar' && alvoBriga !== an.alvoId)) {
     const destinoMigracao = escolha === 'migrar' ? an.destino : null;
-    an.objetivo = escolha; an.destino = destinoMigracao; an.desvio = null;
+    an.objetivo = escolha; an.destino = destinoMigracao; an.desvio = null; an.objetivoDesde = ctx.hora;
     if (escolha === 'cacar') { an.alvoId = an.presaVista; an.inicioCaca = ctx.hora; an.motivo = null; }
     else if (escolha === 'enfrentar') {
       an.alvoId = alvoBriga; an.motivo = motivoBriga; an.inicioCaca = ctx.hora; an.ultimaBriga = ctx.hora;
@@ -965,12 +974,12 @@ function executar(an: Animal, ctx: Contexto) {
     }
 
     case 'dormir': {
-      // pássaros dormem empoleirados numa árvore, longe dos predadores do chão
+      // pássaros dormem no chão debaixo de uma árvore
       if (p.voa && !an.abrigado && an.acao !== 'dormindo') {
         if (semDestino()) definirDestino(an, ctx, arvoreAbrigo(an, 60), andar);
         if (an.destino) {
           const r = mover(an, an.destino, andar, ctx, 0.6);
-          an.acao = 'andando'; an.intencao = 'voando para uma árvore para passar a noite';
+          an.acao = 'andando'; an.intencao = 'voando para debaixo de uma árvore para passar a noite';
           if (r !== 'andando') { an.destino = null; an.abrigado = embaixoDeArvore(an.x, an.z) || r === 'chegou'; }
           return;
         }
@@ -991,7 +1000,7 @@ function executar(an: Animal, ctx: Contexto) {
         }
       }
       an.acao = 'dormindo';
-      an.intencao = an.especie === 'coelho' ? 'dormindo na toca' : p.aquatico ? 'descansando no fundo' : p.voa ? 'dormindo empoleirado numa árvore' : an.amontoado && c.frio > 0.1 ? 'dormindo amontoado com o grupo' : 'dormindo';
+      an.intencao = an.especie === 'coelho' ? 'dormindo na toca' : p.aquatico ? 'descansando no fundo' : p.voa ? 'dormindo no chão, debaixo de uma árvore' : an.amontoado && c.frio > 0.1 ? 'dormindo amontoado com o grupo' : 'dormindo';
       an.destino = null;
       return;
     }
@@ -1094,7 +1103,7 @@ function executar(an: Animal, ctx: Contexto) {
         an.intencao = p.dieta === 'carne' ? (cacadasConhecidas(an) && c.fome > 0.3 ? 'indo a um lugar de caça' : 'rondando o território') : 'andando por aí';
       if (r !== 'andando') {
         an.destino = null; parar('olhando em volta');
-        an.ocupadoAte = ctx.hora + ctx.rand() * 0.2;
+        an.ocupadoAte = ctx.hora + ctx.rand() * (p.voa ? 0.6 : 0.2);   // pássaro pousa e fica um tempo no chão
       }
     }
   }
@@ -1144,7 +1153,7 @@ export function atualizarAnimal(an: Animal, ctx: Contexto) {
   if (reagir) decidir(an, ctx);
   const ax = an.x, az = an.z;
   executar(an, ctx);
-  if (p.voa) altitude(an, Math.hypot(an.x - ax, an.z - az));
+  if (p.voa) altitude(an, an.x - ax, an.z - az);
   if (p.aquatico) an.y = Math.max(heightAt(an.x, an.z) + 0.15, WATER_LEVEL - 0.2);   // nadando logo abaixo da superfície
 }
 
@@ -1155,24 +1164,20 @@ function voltarParaAgua(an: Animal) {
   }
 }
 
-// pássaros: só ficam no ar enquanto se deslocam de verdade (batendo as asas); parados, pousam no chão;
-// dormindo ou abrigados, ficam dentro da copa da árvore
-function altitude(an: Animal, deslocou: number) {
-  const h = heightAt(an.x, an.z), chao = Math.max(h, WATER_LEVEL);
-  if (deslocou > 0.01) {
+// pássaros: só ficam no ar enquanto se deslocam de verdade (batendo as asas);
+// parados — comendo, descansando, abrigados ou dormindo — ficam sempre no chão
+function altitude(an: Animal, dx: number, dz: number) {
+  const chao = Math.max(heightAt(an.x, an.z), WATER_LEVEL);
+  // fazendo algo parado (comendo, bebendo, dormindo, descansando): já está no chão
+  if (an.acao !== 'andando' && an.acao !== 'correndo') { an.vooX = 0; an.vooZ = 0; an.y = chao; return; }
+  // média móvel do deslocamento: ir e voltar no mesmo lugar se anula e não conta como voo
+  an.vooX = an.vooX * 0.6 + dx * 0.4; an.vooZ = an.vooZ * 0.6 + dz * 0.4;
+  if (Math.hypot(an.vooX, an.vooZ) > 0.12) {   // acima de ~1,2 m/s é voo; abaixo, pulinhos no chão
     if (an.acao !== 'correndo') an.acao = 'andando';
     an.y = chao + (an.acao === 'correndo' ? 7 : 4.5);
     return;
   }
-  if (an.acao === 'andando' || an.acao === 'correndo') an.acao = 'parado';
-  if ((an.acao === 'dormindo' || an.objetivo === 'abrigar') && an.abrigado) {
-    let galho: { h: number; escala: number } | null = null, d = 3;
-    for (const o of obstaculosPerto(an.x, an.z)) {
-      if (!('escala' in o)) continue;
-      const dist = Math.hypot(o.x - an.x, o.z - an.z);
-      if (dist < d) { d = dist; galho = o as unknown as { h: number; escala: number }; }
-    }
-    if (galho) { an.y = galho.h - 0.2 + 3.7 * galho.escala; return; }   // logo acima da base da copa
-  }
+  // pulinhos no chão continuam contando como andar; sem sair do lugar, parado
+  if (Math.hypot(dx, dz) < 0.005 && an.acao === 'andando') an.acao = 'parado';
   an.y = chao;
 }

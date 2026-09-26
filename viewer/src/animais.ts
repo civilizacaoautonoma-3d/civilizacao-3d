@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PERFIS, type Especie } from '../../shared/especies';
+import { heightAt } from '../../shared/mundo';
 import type { AnimalRede, CarcacaRede } from '../../shared/protocolo';
 
 // Modelos provisórios feitos de primitivas (até a Fase 4, com Blender).
@@ -262,11 +263,16 @@ export function animarAnimais(dt: number, camera: THREE.Camera) {
       p.rotation.x += (alvo - p.rotation.x) * Math.min(1, k * 2);
     });
 
-    // asas: batem no voo, fechadas no chão ou no galho
+    // asas: batem só no ar; no chão (mesmo andando aos pulinhos) ficam fechadas
+    const noAr = e.especie === 'ave' && e.y - Math.max(0, heightAt(e.x, e.z)) > 0.6;
     v.asas.forEach((a, i) => {
       const lado = i === 0 ? -1 : 1;
-      const alvo = movendo ? Math.sin(performance.now() / (acao === 'correndo' ? 40 : 60) + v.fase) * 0.9 * lado : -1.2 * lado;
-      a.rotation.z += (alvo - a.rotation.z) * Math.min(1, movendo ? 1 : k * 2);
+      // voando: batem para cima e para baixo; no chão: dobradas para trás, junto ao corpo
+      const alvoZ = noAr ? Math.sin(performance.now() / (acao === 'correndo' ? 40 : 60) + v.fase) * 0.9 * lado : 0.1 * lado;
+      const alvoY = noAr ? 0 : 1.35 * lado;
+      const t = Math.min(1, noAr ? 1 : k * 2);
+      a.rotation.z += (alvoZ - a.rotation.z) * t;
+      a.rotation.y += (alvoY - a.rotation.y) * Math.min(1, k * 2);
     });
 
     // cauda do peixe: ondula nadando, mais rápido quando foge

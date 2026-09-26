@@ -133,7 +133,7 @@ export const PERFIS: Record<Especie, PerfilEspecie> = {
     andar: 5, correr: 9, cansacoCorrendo: 2,          // anda voando de um ponto a outro
     visaoDia: 45, visaoNoite: 6, olfato: 3,           // enxerga longe de dia, quase nada à noite
     distanciaFuga: 13, medoInato: { humano: 0.85, lobo: 0.7, javali: 0.4 }, pisoHabituacao: 0.3,
-    coesao: 10, dormeDeDia: false,
+    coesao: 25, dormeDeDia: false,
     enfrenta: false, territorial: false, machosDisputam: false, migraNoInverno: false, voa: true, alarme: true, aquatico: false,
     confortoMin: 4, abrigo: 'arvore',
     fomePorHora: 1 / 10, sedePorHora: 1 / 14, saciedade: 0.3, consumoPasto: 0.003, porcoesDeCarne: 1,
