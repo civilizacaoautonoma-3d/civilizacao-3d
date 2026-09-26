@@ -77,7 +77,7 @@ function lugarParaGrupo(esp: Especie, rand: () => number, ocupados: Ponto[]): Po
   return null;
 }
 
-function criarGrupo(e: Estado, esp: Especie, centro: Ponto, n: number, hora: number, rand: () => number) {
+function criarGrupo(e: Estado, esp: Especie, centro: Ponto, n: number, hora: number, rand: () => number, soSexo?: 'M' | 'F') {
   const p = PERFIS[esp];
   const grupo = `g_${e.proximoId++}`;
   const agua = p.aquatico ? null : aguaMaisProximaDoMapa(centro.x, centro.z);
@@ -89,7 +89,7 @@ function criarGrupo(e: Estado, esp: Especie, centro: Ponto, n: number, hora: num
       const px = centro.x + (rand() - 0.5) * 10, pz = centro.z + (rand() - 0.5) * 10;
       if (cabe(px, pz)) { x = px; z = pz; break; }
     }
-    const sexo = i === 0 ? 'F' : i === 1 ? 'M' : rand() < 0.5 ? 'M' : 'F';
+    const sexo = soSexo ?? (i === 0 ? 'F' : i === 1 ? 'M' : rand() < 0.5 ? 'M' : 'F');
     const idadeDias = Math.min(p.adultoDias * (1 + rand() * 2), p.vidaDias * 0.6);
     const an = criarAnimal(`an_${e.proximoId++}`, esp, sexo, x, z, hora - idadeDias * 24, rand);
     an.grupo = grupo; an.adulto = true;
@@ -118,15 +118,20 @@ function povoar(e: Estado, hora: number, rand: () => number) {
   }
 }
 
-// quando uma espécie quase some do vale, às vezes chega gente de fora pelas bordas
-function imigrar(e: Estado, esp: Especie, hora: number, rand: () => number, registrar: (t: string) => void) {
-  if (PERFIS[esp].aquatico) {
+// quando uma espécie quase some do vale (ou fica só com machos ou só com fêmeas),
+// às vezes chega gente de fora pelas bordas — o vale não é isolado do resto do mundo
+function imigrar(e: Estado, esp: Especie, hora: number, rand: () => number, registrar: (t: string) => void, soSexo?: 'M' | 'F') {
+  const p = PERFIS[esp];
+  const quem = (n: number) => soSexo
+    ? `${n === 1 ? `Um ${p.nome}` : `${n} ${p.plural}`} ${soSexo === 'M' ? (n === 1 ? 'macho' : 'machos') : (n === 1 ? 'fêmea' : 'fêmeas')}`
+    : `Um grupo de ${n} ${p.plural}`;
+  if (p.aquatico) {
     // peixes chegam pela água (subindo o rio)
     const centro = lugarParaGrupo(esp, rand, []);
     if (!centro) return;
-    const n = 4 + Math.floor(rand() * 3);
-    criarGrupo(e, esp, centro, n, hora, rand);
-    registrar(`Um cardume de ${n} ${PERFIS[esp].plural} chegou pelo rio`);
+    const n = soSexo ? 2 : 4 + Math.floor(rand() * 3);
+    criarGrupo(e, esp, centro, n, hora, rand, soSexo);
+    registrar(`${quem(n)} ${n === 1 ? 'chegou' : 'chegaram'} pelo rio`);
     return;
   }
   for (let t = 0; t < 100; t++) {
@@ -135,9 +140,9 @@ function imigrar(e: Estado, esp: Especie, hora: number, rand: () => number, regi
     const z = lado === 2 ? borda : lado === 3 ? -borda : s;
     const h = heightAt(x, z);
     if (!terraSeca(x, z) || h > 14) continue;
-    const n = 2 + Math.floor(rand() * 2);
-    criarGrupo(e, esp, { x, z }, n, hora, rand);
-    registrar(`Um grupo de ${n} ${PERFIS[esp].plural} chegou de fora do vale`);
+    const n = soSexo ? 1 : 2 + Math.floor(rand() * 2);
+    criarGrupo(e, esp, { x, z }, n, hora, rand, soSexo);
+    registrar(`${quem(n)} chegou de fora do vale`);
     return;
   }
 }
@@ -233,9 +238,14 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
   if (dia > e.ultimoCenso) {
     e.ultimoCenso = dia;
     registrar(`Censo: ${censo(e)}`);
-    for (const esp of ESPECIES)
-      if (e.animais.filter(an => an.especie === esp).length < PERFIS[esp].minimoRegional && rand() < 0.25)
-        imigrar(e, esp, ctx.hora, rand, registrar);
+    for (const esp of ESPECIES) {
+      const bichos = e.animais.filter(an => an.especie === esp);
+      if (bichos.length < PERFIS[esp].minimoRegional && rand() < 0.25) { imigrar(e, esp, ctx.hora, rand, registrar); continue; }
+      // só um dos sexos no vale (nem entre os filhotes): sem chegada de fora, a espécie nunca mais cria
+      const temM = bichos.some(an => an.sexo === 'M'), temF = bichos.some(an => an.sexo === 'F');
+      if (bichos.length > 0 && (!temM || !temF) && rand() < 0.2)
+        imigrar(e, esp, ctx.hora, rand, registrar, temM ? 'F' : 'M');
+    }
   }
 }
 

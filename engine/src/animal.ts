@@ -221,7 +221,9 @@ function perceber(an: Animal, ctx: Contexto) {
         // outra matilha: quem está em maior número enfrenta; em menor número, recua
         const delesPerto = ctx.perto(o.x, o.z, 25).filter(x => x.vivo && x.grupo === o.grupo && Math.hypot(x.x - o.x, x.z - o.z) < 25).length;
         if (d < 25) {
-          if (delesPerto === 1 && meusPerto >= 2 && (g?.n ?? 1) >= 3) an.rivalVisto = { id: o.id, motivo: 'expulsar' };
+          // um solitário é expulso — a não ser que traga o que falta à matilha (um macho ou uma fêmea adulta)
+          if (delesPerto === 1 && meusPerto >= 2 && (g?.n ?? 1) >= 3 && temAdultoDoSexo(ctx, an.grupo, o.sexo))
+            an.rivalVisto = { id: o.id, motivo: 'expulsar' };
           else if (meusPerto > delesPerto || (meusPerto === delesPerto && g?.lider === an)) an.rivalVisto = { id: o.id, motivo: 'rival' };
           else considerar(o, d, 0.8);
         }
@@ -250,7 +252,12 @@ function perceber(an: Animal, ctx: Contexto) {
     for (const o of ctx.perto(an.x, an.z, visao)) {
       if (!o.vivo || o.especie !== an.especie || o.grupo === an.grupo || Math.hypot(o.x - an.x, o.z - an.z) > visao) continue;
       const go = ctx.grupos.get(o.grupo);
-      if (go && go.n < 3) { an.grupo = o.grupo; ctx.evento('Um lobo solitário se juntou a uma matilha pequena'); break; }
+      if (go && (go.n < 3 || !temAdultoDoSexo(ctx, o.grupo, an.sexo))) {
+        an.grupo = o.grupo;
+        ctx.evento(go.n < 3 ? 'Um lobo solitário se juntou a uma matilha pequena'
+          : `Um lobo solitário foi aceito numa matilha que não tinha ${an.sexo === 'M' ? 'macho' : 'fêmea'}`);
+        break;
+      }
     }
   }
 
@@ -309,6 +316,9 @@ function perceber(an: Animal, ctx: Contexto) {
 
   tentarConceber(an, ctx);
 }
+
+const temAdultoDoSexo = (ctx: Contexto, grupo: string, sexo: 'M' | 'F') =>
+  ctx.animais.some(o => o.vivo && o.grupo === grupo && o.adulto && o.sexo === sexo);
 
 // quanto vale caçar este animal (só lobos)
 function notaDePresa(an: Animal, o: Animal, meusPerto: number, ctx: Contexto) {
