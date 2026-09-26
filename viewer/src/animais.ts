@@ -7,6 +7,7 @@ import type { AnimalRede, CarcacaRede } from '../../shared/protocolo';
 
 export interface AnimalVisual {
   grupo: THREE.Group; pose: THREE.Group; cabeca: THREE.Group; pernas: THREE.Group[]; asas: THREE.Group[]; cauda: THREE.Group | null;
+  proximoSalto: number; inicioSalto: number;   // peixes: pulo de vez em quando (só visual)
   alvo: THREE.Vector3; dados: AnimalRede; fase: number;
 }
 
@@ -183,7 +184,8 @@ function criarAnimal(e: AnimalRede): AnimalVisual {
   grupo.position.set(e.x, e.y, e.z);
   grupo.rotation.y = e.rotacao;
   cena?.add(grupo);
-  const v: AnimalVisual = { grupo, pose, cabeca, pernas, asas, cauda, alvo: new THREE.Vector3(e.x, e.y, e.z), dados: e, fase: Math.random() * 6 };
+  const v: AnimalVisual = { grupo, pose, cabeca, pernas, asas, cauda,
+    proximoSalto: performance.now() / 1000 + 5 + Math.random() * 40, inicioSalto: -99, alvo: new THREE.Vector3(e.x, e.y, e.z), dados: e, fase: Math.random() * 6 };
   animais.set(e.id, v);
   return v;
 }
@@ -282,5 +284,16 @@ export function animarAnimais(dt: number, camera: THREE.Camera) {
     v.cabeca.rotation.x += (cabecaBaixa - v.cabeca.rotation.x) * k;
     const inclinacao = acao === 'atacando' ? 0.15 : 0;
     v.pose.rotation.x += (inclinacao - v.pose.rotation.x) * k;
+
+    // peixe: de vez em quando salta para fora d'água num arco e mergulha de volta (enfeite visual)
+    if (e.especie === 'peixe' && acao !== 'dormindo') {
+      const agora = performance.now() / 1000;
+      if (agora > v.proximoSalto) { v.inicioSalto = agora; v.proximoSalto = agora + 20 + Math.random() * 60; }
+      const t = (agora - v.inicioSalto) / 0.9;
+      if (t >= 0 && t <= 1) {
+        v.pose.position.y = Math.sin(t * Math.PI) * 0.8;   // sai uns 60 cm acima da superfície
+        v.pose.rotation.x = (t - 0.5) * 2.4;               // sobe de focinho, desce de cabeça
+      }
+    }
   }
 }

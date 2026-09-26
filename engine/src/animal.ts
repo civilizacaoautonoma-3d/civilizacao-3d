@@ -1118,6 +1118,8 @@ export function atualizarAnimal(an: Animal, ctx: Contexto) {
 
   const reagir = --an.proximaDecisao <= 0;
   if (reagir) { an.proximaDecisao = 5; perceber(an, ctx); }
+  // peixe fora d'água (não deveria acontecer): volta para a água funda mais próxima
+  if (p.aquatico && reagir && !naAgua(an.x, an.z)) { voltarParaAgua(an); an.y = Math.max(heightAt(an.x, an.z) + 0.15, WATER_LEVEL - 0.2); }
 
   if (ctx.hora < an.ocupadoAte) return;
 
@@ -1130,15 +1132,37 @@ export function atualizarAnimal(an: Animal, ctx: Contexto) {
   }
 
   if (reagir) decidir(an, ctx);
+  const ax = an.x, az = an.z;
   executar(an, ctx);
-  if (p.voa) altitude(an);
-  if (p.aquatico) an.y = Math.max(heightAt(an.x, an.z) + 0.15, WATER_LEVEL - 0.5);   // nadando sob a superfície
+  if (p.voa) altitude(an, Math.hypot(an.x - ax, an.z - az));
+  if (p.aquatico) an.y = Math.max(heightAt(an.x, an.z) + 0.15, WATER_LEVEL - 0.2);   // nadando logo abaixo da superfície
 }
 
-// pássaros: no ar enquanto se deslocam, no galho quando dormem ou se abrigam, no chão quando comem
-function altitude(an: Animal) {
+function voltarParaAgua(an: Animal) {
+  for (let r = 2; r <= 200; r += 3) for (let k = 0; k < 16; k++) {
+    const ang = (k / 16) * Math.PI * 2, x = an.x + Math.cos(ang) * r, z = an.z + Math.sin(ang) * r;
+    if (naAgua(x, z)) { an.x = x; an.z = z; an.destino = null; an.desvio = null; return; }
+  }
+}
+
+// pássaros: só ficam no ar enquanto se deslocam de verdade (batendo as asas); parados, pousam no chão;
+// dormindo ou abrigados, ficam dentro da copa da árvore
+function altitude(an: Animal, deslocou: number) {
   const h = heightAt(an.x, an.z), chao = Math.max(h, WATER_LEVEL);
-  if (an.acao === 'andando' || an.acao === 'correndo') an.y = chao + (an.acao === 'correndo' ? 7 : 4.5);
-  else if ((an.acao === 'dormindo' || an.objetivo === 'abrigar') && an.abrigado) an.y = h + 3.3;
-  else an.y = chao;
+  if (deslocou > 0.01) {
+    if (an.acao !== 'correndo') an.acao = 'andando';
+    an.y = chao + (an.acao === 'correndo' ? 7 : 4.5);
+    return;
+  }
+  if (an.acao === 'andando' || an.acao === 'correndo') an.acao = 'parado';
+  if ((an.acao === 'dormindo' || an.objetivo === 'abrigar') && an.abrigado) {
+    let galho: { h: number; escala: number } | null = null, d = 3;
+    for (const o of obstaculosPerto(an.x, an.z)) {
+      if (!('escala' in o)) continue;
+      const dist = Math.hypot(o.x - an.x, o.z - an.z);
+      if (dist < d) { d = dist; galho = o as unknown as { h: number; escala: number }; }
+    }
+    if (galho) { an.y = galho.h - 0.2 + 3.7 * galho.escala; return; }   // logo acima da base da copa
+  }
+  an.y = chao;
 }

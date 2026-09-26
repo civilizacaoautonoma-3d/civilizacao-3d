@@ -158,7 +158,7 @@ scene.add(terrain);
 const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE);
 waterGeo.rotateX(-Math.PI / 2);
 const water = new THREE.Mesh(waterGeo, new THREE.MeshStandardMaterial({
-  color: 0x2f6f8f, transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.1 }));
+  color: 0x2f6f8f, transparent: true, opacity: 0.62, roughness: 0.1, metalness: 0.1 }));   // dá para ver os peixes de perto
 water.position.y = WATER_LEVEL;
 scene.add(water);
 
