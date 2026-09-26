@@ -25,6 +25,8 @@ function htmlAgente(e: EntidadeRede) {
   const caca = e.caca.tentativas > 0 ? ` · caçou ${e.caca.sucessos} de ${e.caca.tentativas} tentativas` : '';
   return `<h3>${e.nome} <small>${e.sexo === 'M' ? 'homem' : 'mulher'}${e.sentimentos?.jeito.length ? ' · ' + e.sentimentos.jeito.join(', ') : ''}</small></h3>
     <p class="intencao">${e.intencao}</p>
+    ${e.mente?.pensamento ? `<p class="pensamento">“${e.mente.pensamento}”</p>` : ''}
+    ${e.mente?.plano?.length ? `<p class="memoria">Plano de hoje: ${e.mente.plano.join(', ')}</p>` : ''}
     ${sentimentos(e)}
     ${barra('Fome', n.fome, '#e0763c')}
     ${barra('Sede', n.sede, '#3c9ee0')}
@@ -67,7 +69,8 @@ function mente(e: EntidadeRede) {
   const lembrancas = m.lembrancas.map(l => `<li>${l}</li>`).join('');
   return `<p class="titulo">Acredita que</p><ul class="lista">${crencas}</ul>
     ${lembrancas ? `<p class="titulo">Lembra</p><ul class="lista">${lembrancas}</ul>` : ''}
-    <p class="memoria">${m.episodios} lembranças · conhece ${Math.round(m.mapaConhecido * 100)}% do vale</p>`;
+    <p class="memoria">${m.episodios} lembranças · conhece ${Math.round(m.mapaConhecido * 100)}% do vale</p>
+    ${m.deliberador ? `<p class="memoria">Mente: ${m.deliberador}</p>` : ''}`;
 }
 
 function idade(dias: number) {

@@ -12,6 +12,7 @@ import { aguaMaisProximaDoMapa, LIMITE, naAgua, terraSeca, type Ponto } from './
 import { conhecidas } from './mapa';
 import type { Episodio } from './memoria';
 import { descreverPersonalidade, emocaoDominante } from './emocoes';
+import { config as configMente, pulsoDaMente } from './deliberacao';
 
 export const TICKS_POR_SEGUNDO = 10;
 export const DT = 1 / TICKS_POR_SEGUNDO;
@@ -225,6 +226,9 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     if (nascidos.length) { e.animais.push(...nascidos); nascidos.length = 0; montarGrade(e.animais); }
   }
 
+  // a mente deliberativa: aplica o que foi pensado e despacha novos pedidos (fila, orçamento)
+  pulsoDaMente(e.agentes, ctx.hora);
+
   // ecologia: frutos, pasto e carcaças, uma vez por tick
   const horas = vel * HORAS_POR_PASSO;
   atualizarFrutos(e.frutos, horas, ceu.tempo.estacao, rand);
@@ -281,6 +285,9 @@ const agenteParaRede = (a: Agente): EntidadeRede => ({
     lembrancas: [...a.mente.episodios].sort((p, q) => q.importancia * q.forca - p.importancia * p.forca).slice(0, 3)
       .map(descreverEpisodio),
     mapaConhecido: r2(conhecidas(a.mapa) / a.mapa.length),
+    pensamento: a.deliberacao.pensamento,
+    plano: (a.deliberacao.plano?.itens ?? []).map(i => PALAVRA_ACAO[i.acao] ?? i.acao),
+    deliberador: configMente.provedor?.nome ?? null,
   },
   sentimentos: (() => {
     const s = a.sentimentos, dom = emocaoDominante(s);
@@ -294,6 +301,11 @@ const agenteParaRede = (a: Agente): EntidadeRede => ({
     };
   })(),
 });
+
+const PALAVRA_ACAO: Record<string, string> = {
+  comer: 'comer', beber: 'beber água', dormir: 'dormir', descansar: 'descansar', abrigar: 'se abrigar',
+  explorar: 'explorar', fugir: 'fugir', aproximar: 'ficar perto do outro', cacar: 'caçar',
+};
 
 function descreverEpisodio(e: Episodio) {
   const [tipo, valor] = e.sobre.split(':');

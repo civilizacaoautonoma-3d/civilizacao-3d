@@ -37,6 +37,9 @@ canvas { display: block; }
 #painel .barra { flex: 1; height: 7px; background: rgba(255, 255, 255, 0.15); border-radius: 4px; overflow: hidden; }
 #painel .barra div { height: 100%; }
 #painel .memoria { margin-top: 8px; opacity: 0.75; }
+#painel .pensamento { margin: 4px 0 6px; padding: 5px 8px; border-left: 2px solid rgba(255,255,255,0.4); font-style: italic; opacity: 0.95; line-height: 1.35; }
+#painel .pensamento { margin: 4px 0 6px; padding: 5px 8px; border-left: 2px solid rgba(255,255,255,0.4); font-style: italic; opacity: 0.95; line-height: 1.35; }
+#painel .pensamento { margin: 4px 0 6px; padding: 5px 8px; border-left: 2px solid rgba(255,255,255,0.4); font-style: italic; opacity: 0.95; line-height: 1.35; }
 #painel .titulo { margin-top: 8px; font-weight: bold; opacity: 0.85; }
 #painel .lista { margin: 2px 0 0 14px; padding: 0; }
 #painel .lista li { margin: 1px 0; line-height: 1.3; }

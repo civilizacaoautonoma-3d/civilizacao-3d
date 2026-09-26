@@ -5,6 +5,8 @@ import { SEED, mulberry32 } from '../../shared/mundo';
 import { estadoDoCeu, tempoDoMundo, TEMPO } from '../../shared/clima';
 import type { MensagemCliente, MensagemServidor } from '../../shared/protocolo';
 import { DT, TICKS_POR_SEGUNDO, censo, horaDoMundo, migrar, mundoNovo, passoDoMundo, retrato, type Estado } from './simulacao';
+import { configurarMente, estadoDaFila } from './deliberacao';
+import { escolherProvedor } from './provedores';
 
 // ---------- Configuração ----------
 const PORTA = Number(process.env.PORTA ?? 8080);
@@ -13,6 +15,7 @@ const VELOCIDADES = [1, 4, 15, 60];                           // ×60: 1 dia do 
 const PASTA = path.resolve('data');
 const ARQUIVO = path.join(PASTA, 'estado.json');
 const EVENTOS = path.join(PASTA, 'eventos.log');
+const MENTE = path.join(PASTA, 'mente.jsonl');   // cada deliberação: situação, resposta, o que foi aplicado, consequência
 
 // ---------- Estado ----------
 // cada mundo começa no Dia 1 às 06:00, no momento em que foi criado
@@ -57,6 +60,17 @@ function registrar(texto: string) {
   fs.mkdirSync(PASTA, { recursive: true });
   fs.appendFileSync(EVENTOS, linha + '\n');
 }
+
+// ---------- Mente deliberativa (Fase 9) ----------
+const provedor = escolherProvedor();
+configurarMente({
+  provedor,
+  porAgentePorDia: Number(process.env.MENTE_POR_DIA ?? 8),
+  porHoraReal: Number(process.env.MENTE_POR_HORA ?? 120),
+  registrar: r => { fs.mkdirSync(PASTA, { recursive: true }); fs.appendFileSync(MENTE, JSON.stringify(r) + '\n'); },
+  avisar: registrar,
+});
+console.log(`Mente deliberativa: ${provedor ? provedor.nome : 'desligada'}`);
 
 // ---------- Simulação ----------
 const aleatorio = mulberry32(SEED * 31 + estado.tick);
@@ -110,6 +124,8 @@ setInterval(() => {
   const c = estadoDoCeu(msMundo(), SEED).clima;
   console.log(`[${carimbo()}] tick ${estado.tick} · ${c.tipo} ${c.temperatura.toFixed(1)} °C · ${wss.clients.size} observadores`);
   console.log(`   ${censo(estado)}`);
+  const f = estadoDaFila();
+  if (provedor) console.log(`   mente: ${f.esperando} esperando · ${f.emAndamento} pensando · ${f.chamadasNaUltimaHora} chamadas na última hora`);
   for (const a of estado.agentes) {
     const n = a.corpo;
     console.log(`   ${a.nome}: ${a.intencao} · fome ${pct(n.fome)} · sede ${pct(n.sede)} · sono ${pct(n.sono)} · ` +

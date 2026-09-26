@@ -5,6 +5,8 @@
 import { SEED, mulberry32 } from '../../shared/mundo';
 import { TEMPO, tempoDoMundo } from '../../shared/clima';
 import { DT, censo, mundoNovo, passoDoMundo } from '../src/simulacao';
+import { configurarMente, type RegistroDeliberacao } from '../src/deliberacao';
+import { provedorTeste } from '../src/provedores';
 
 const dias = Number(process.argv.slice(2).find((a, i, v) => /^\d+$/.test(a) && v[i - 1] !== '--desde') ?? 30);
 const tudo = process.argv.includes('--tudo');
@@ -12,6 +14,10 @@ const arg = (nome: string) => { const i = process.argv.indexOf(nome); return i >
 const rastrear = arg('--rastrear');
 const desde = Number(arg('--desde') ?? 0);
 const VEL = 60;
+
+// a validação usa o deliberador de teste (sem rede, determinístico)
+const deliberacoes: RegistroDeliberacao[] = [];
+configurarMente({ provedor: provedorTeste, registrar: r => deliberacoes.push(r), avisar: t => registrar(t) });
 
 const e = mundoNovo(0, mulberry32(SEED * 17));
 const rand = mulberry32(SEED * 31);
@@ -52,6 +58,11 @@ while (tempoDoMundo(ms).diasTotais < dias + 0.25) {
   }
 }
 const seg = (performance.now() - inicio) / 1000;
+const porTipo = (t: string) => deliberacoes.filter(d => d.tipo === t);
+console.log(`\nDeliberações: ${['plano', 'evento', 'reflexao', 'consequencia'].map(t => `${porTipo(t).length} ${t}`).join(' · ')}`);
+const rejeicoes = deliberacoes.flatMap(d => d.rejeitado ?? []);
+console.log(`  aplicadas: ${deliberacoes.filter(d => d.aplicado && d.tipo !== 'consequencia').length} · com rejeição: ${rejeicoes.length} · erros: ${deliberacoes.filter(d => d.erro).length}`);
+for (const d of deliberacoes.filter(x => x.tipo === 'evento').slice(0, 3)) console.log(`  evento (${d.agente}): ${d.situacao?.evento} -> ${d.aplicado ?? d.erro}`);
 console.log(`\n${dias} dias simulados em ${seg.toFixed(1)} s`);
 console.log('\nEventos:');
 for (const [k, v] of [...contagem].sort((a, b) => b[1] - a[1])) if (!k.startsWith('Censo')) console.log(`  ${String(v).padStart(6)}  ${k}`);

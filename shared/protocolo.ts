@@ -21,6 +21,9 @@ export interface EntidadeRede {
     crencas: { enunciado: string; certeza: number }[];
     lembrancas: string[];      // as mais marcantes
     mapaConhecido: number;     // fração do vale que já viu
+    pensamento: string;        // o último pensamento deliberado (Fase 9)
+    plano: string[];           // prioridades do plano do dia, em palavras
+    deliberador: string | null;
   };
   sentimentos: {
     dominante: string | null;  // emoção básica mais forte agora (aparece no corpo)
