@@ -11,10 +11,13 @@ import type { Agente } from './agente';
 import { ev, lembrar, sinta } from './agente';
 import { fogosPerto } from './objetos';
 import { pertoDaAgua } from './espaco';
+import { atualizarAtracao, ehBebe, ehCrianca, formamPar, idadeDias } from './vida';
 
 export interface Relacao {
   afeto: number; confianca: number; respeito: number; medo: number; ressentimento: number; divida: number;
   convivencia: number;   // horas passadas juntos
+  atracao?: number;       // Fase 12: entre jovens/adultos de sexos diferentes
+  infanciaJuntos?: number; // horas de convivência quando um dos dois era criança (gera aversão, não atração)
 }
 export interface Fala { palavras: string[]; conceitos: string[]; quando: number; apontando: { x: number; z: number } | null }
 export interface Dica { conceito: string; x: number; z: number; de: string; ate: number }
@@ -43,7 +46,7 @@ export function mudarRelacao(a: Agente, outro: Agente, mudanca: Partial<Omit<Rel
   const r = relacao(a, outro.id);
   // laço positivo cresce cada vez mais devagar perto do máximo (confiança plena leva muito tempo)
   for (const [k, v] of Object.entries(mudanca) as [keyof Relacao, number][])
-    r[k] = lim(r[k] + (v > 0 && (k === 'afeto' || k === 'confianca' || k === 'respeito') ? v * (1 - Math.max(0, r[k])) : v), k === 'afeto' ? -1 : 0, 1);
+    r[k] = lim((r[k] ?? 0) + (v > 0 && (k === 'afeto' || k === 'confianca' || k === 'respeito') ? v * (1 - Math.max(0, r[k] ?? 0)) : v), k === 'afeto' ? -1 : 0, 1);
 }
 
 // ---------- Conceitos e tradução (a tradução é só para quem observa) ----------
@@ -115,7 +118,7 @@ export function falar(a: Agente, ctx: Contexto, conceitos: string[], apontando: 
   ev(a, ctx, `disse "${palavras.join(' ')}" (${conceitos.map(c => traduzir(c, ctx)).join(' ')})${apontando ? ', apontando' : ''}`);
   const alcance = (conceitos.some(c => c.startsWith('perigo:')) ? 45 : 35) * (ctx.noite ? 0.8 : 1);
   for (const o of ctx.agentes) {
-    if (o === a || !o.vivo || o.acao === 'dormindo' || Math.hypot(o.x - a.x, o.z - a.z) > alcance) continue;
+    if (o === a || !o.vivo || o.acao === 'dormindo' || ehBebe(o, ctx.hora) || Math.hypot(o.x - a.x, o.z - a.z) > alcance) continue;
     ouvir(o, a, palavras, conceitos, apontando, ctx);
   }
   return true;
@@ -137,15 +140,16 @@ function ouvir(o: Agente, f: Agente, palavras: string[], conceitos: string[], po
       : ponto ? Math.hypot(ponto.x - o.x, ponto.z - o.z) < vis * 1.1 : false;
     const entendido = interpretar(o, p);
     entendeu.push(entendido);
+    const jovem = ehCrianca(o, ctx.hora) ? 2 : 1;   // criança aprende a língua do grupo muito mais depressa
     if (ve) {
       if (entendido === c) {
-        reforcar(o, c, p, 0.15); reforcar(f, c, p, 0.1);
+        reforcar(o, c, p, 0.15 * jovem); reforcar(f, c, p, 0.1);
         o.social.contagem.entendidas++; f.social.contagem.entendidas++;
         mudarRelacao(o, f, { confianca: 0.003 }); mudarRelacao(f, o, { afeto: 0.002 });
       } else {
         // desencontro: quem ouve liga o som à coisa que está vendo; quem falou fica menos seguro daquele som
         if (entendido) reforcar(o, entendido, p, -0.12);
-        reforcar(o, c, p, entendido ? 0.12 : 0.25);
+        reforcar(o, c, p, (entendido ? 0.12 : 0.25) * jovem);
         reforcar(f, c, p, -0.04);
         o.social.contagem.desencontros++;
       }
@@ -239,8 +243,11 @@ export function pulsoSocial(a: Agente, ctx: Contexto, horas: number) {
     r.ressentimento = lim(r.ressentimento - horas * 0.004);
     r.medo = lim(r.medo - horas * 0.004);
     r.divida = lim(r.divida - horas * 0.001);
+    atualizarAtracao(a, o, ctx, horas, d < 6);
 
-    if (a.acao === 'dormindo' || o.acao === 'dormindo' || d > 40) continue;
+    // bebê não fala; criança só começa a falar depois de um tempo ouvindo
+    if (ehBebe(a, ctx.hora) || (ehCrianca(a, ctx.hora) && idadeDias(a, ctx.hora) < 90)) continue;
+    if (a.acao === 'dormindo' || o.acao === 'dormindo' || d > 40 || ehBebe(o, ctx.hora)) continue;
     // vontade de dizer: quem é expansivo e gosta do outro fala mais
     const vontade = 0.25 + 0.35 * P.extroversao + 0.25 * Math.max(0, r.afeto) + 0.15 * P.amabilidade;
     if (ctx.rand() > vontade) continue;
@@ -286,5 +293,6 @@ export function descreverRelacao(r: Relacao) {
   if (r.ressentimento > 0.3) t.push('guarda mágoa');
   if (r.medo > 0.3) t.push('tem medo');
   if (r.divida > 0.3) t.push('sente que deve favores');
+  if ((r.atracao ?? 0) > 0.5) t.push('quer estar sempre junto');
   return t.length ? t.join(', ') : 'ainda não sabe o que sente';
 }

@@ -43,6 +43,14 @@ export interface EntidadeRede {
   fala: { texto: string; traducao: string } | null;
   relacoes: { nome: string; descricao: string; afeto: number; confianca: number; respeito: number; ressentimento: number }[];
   palavras: { palavra: string; significado: string; forca: number; comum: boolean }[];
+  // Fase 12: idade, tamanho, família, gravidez, colo, doença
+  idade: string;               // "bebê, 12 dias", "jovem", "adulto, 1.2 anos"…
+  escala: number;              // tamanho do corpo (bebê pequeno; cresce até a maturidade)
+  pais: string | null;         // "filho de Nia e Aru"
+  gravida: boolean;
+  carregadoPor: string | null; // id de quem carrega este bebê
+  doente: string | null;
+  geracao: number;
 }
 
 export interface AnimalRede {

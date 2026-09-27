@@ -34,11 +34,12 @@ const contagem = new Map<string, number>();
 const rotina = /foi dormir|^(\S+) acordou$|descobriu|encontrou um arbusto|disse "/;
 
 function registrar(t: string) {
-  const tipo = t.replace(/\d+/g, 'N').replace(/^(Aru|Nia) /, '<agente> ');
+  const quem = e.agentes.find(a => t.startsWith(a.nome + ' '));
+  const tipo = (quem ? '<agente> ' + t.slice(quem.nome.length + 1) : t).replace(/\d+/g, 'N');
   contagem.set(tipo, (contagem.get(tipo) ?? 0) + 1);
   if (t.startsWith('Censo')) return;
-  const deAgente = /^(Aru|Nia) /.test(t);
-  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio|palavra em comum/.test(t)) console.log(`  [${carimbo()}] ${t}`);
+  const deAgente = !!quem;
+  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio|palavra em comum|Nasceu|como um par/.test(t)) console.log(`  [${carimbo()}] ${t}`);
 }
 
 const inicio = performance.now();
@@ -48,13 +49,15 @@ while (tempoDoMundo(ms).diasTotais < dias + 0.25) {
   ms += DT * 1000 * VEL;
   const t = tempoDoMundo(ms);
   const dia = Math.floor(t.diasTotais);
-  const alvo = rastrear ? e.agentes.find(a => a.nome === rastrear) : undefined;
-  if (alvo && t.diasTotais >= desde && Math.floor(t.diasTotais * 48) !== meiaHora) {
+  const alvos = rastrear ? e.agentes.filter(a => rastrear.split(',').includes(a.nome)) : [];
+  if (alvos.length && t.diasTotais >= desde && Math.floor(t.diasTotais * 48) !== meiaHora) {
     meiaHora = Math.floor(t.diasTotais * 48);
+    for (const alvo of alvos) {
     const c = alvo.corpo, r = (v: number) => v.toFixed(2);
     console.log(`    ${carimbo()} ${alvo.nome} ${alvo.objetivo ?? '-'} ${alvo.acao} "${alvo.intencao}" fome ${r(c.fome)} sede ${r(c.sede)} ` +
       `sono ${r(c.sono)} frio ${r(c.frio)} saúde ${r(c.saude)} pos ${alvo.x.toFixed(0)},${alvo.z.toFixed(0)} ` +
       `ameaça ${alvo.ameaca?.id ?? '-'} comida ${alvo.memoria.filter(m => m.tipo === 'comida').map(m => m.frutos).join('/')}`);
+    }
   }
   if (dia !== diaAnterior && t.hora === 12) {
     diaAnterior = dia;
@@ -82,6 +85,13 @@ for (const a of e.agentes) {
   console.log(`    palavras: ${palavras.join(' ') || 'nenhuma'}`);
   for (const [id, r] of Object.entries(a.social.relacoes))
     console.log(`    com ${e.agentes.find(x => x.id === id)?.nome}: ${descreverRelacao(r)} (afeto ${r.afeto.toFixed(2)}, confiança ${r.confianca.toFixed(2)}, respeito ${r.respeito.toFixed(2)}, mágoa ${r.ressentimento.toFixed(2)}, ${Math.round(r.convivencia)} h juntos)`);
+}
+console.log('\nÁrvore genealógica (Fase 12):');
+const dia = (h: number) => Math.floor(h / 24) + 1;
+for (const p of e.genealogia) {
+  const pais = [p.mae, p.pai].map(id => e.genealogia.find(x => x.id === id)?.nome).filter(Boolean).join(' e ');
+  console.log(`  ${p.nome} (${p.sexo}, geração ${p.geracao})${pais ? ` ${p.sexo === 'F' ? 'filha' : 'filho'} de ${pais}` : ' fundador'}` +
+    `${p.nascidoEm > 0 ? `, nasceu no dia ${dia(p.nascidoEm)}` : ''}${p.morreuEm !== null ? `, morreu no dia ${dia(p.morreuEm)} (${p.causa})` : ''}`);
 }
 const tiposObj: Record<string, number> = {};
 for (const o of e.objetos) tiposObj[o.tipo] = (tiposObj[o.tipo] ?? 0) + 1;

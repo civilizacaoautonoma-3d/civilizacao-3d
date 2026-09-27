@@ -16,6 +16,7 @@ import { config as configMente, pulsoDaMente } from './deliberacao';
 import { atualizarObjetos, objetosIniciais, reporObjetos, tichao, type Descoberta, type Objeto } from './objetos';
 import { descreverMao, descreverTecnicas } from './tecnicas';
 import { descreverRelacao, melhorPalavra, traduzir } from './social';
+import { crescimento, descreverFase } from './vida';
 
 export const TICKS_POR_SEGUNDO = 10;
 export const DT = 1 / TICKS_POR_SEGUNDO;
@@ -28,8 +29,11 @@ export interface Estado {
   proximoId: number; ultimoCenso: number;
   introduzidas: Especie[];   // espécies que já foram soltas neste mundo (as novas chegam em mundos antigos)
   objetos: Objeto[];          // Fase 10: pedras, gravetos, fibras, lascas, pilhas, fogos
+  genealogia: Parente[];      // Fase 12: quem nasceu de quem, quando nasceu e morreu
   descobertas: Descoberta[];  // registro histórico de quem descobriu o quê e para quem passou
 }
+
+export interface Parente { id: string; nome: string; sexo: 'M' | 'F'; mae: string | null; pai: string | null; geracao: number; nascidoEm: number; morreuEm: number | null; causa: string | null }
 
 export const horaDoMundo = (msMundo: number) => tempoDoMundo(msMundo).diasTotais * 24;
 
@@ -43,7 +47,7 @@ export function mundoNovo(criadoEm: number, rand: () => number): Estado {
     ],
     frutos: ARBUSTOS.map(b => Math.ceil(b.max / 2)),
     animais: [], carcacas: [], pasto: pastoInicial(), raizes: raizesIniciais(), marcas: [],
-    proximoId: 1, ultimoCenso: 0, introduzidas: [], objetos: [], descobertas: [],
+    proximoId: 1, ultimoCenso: 0, introduzidas: [], objetos: [], descobertas: [], genealogia: [],
   };
   e.objetos = objetosIniciais(rand, () => e.proximoId++);
   povoar(e, TEMPO.HORA_INICIAL, rand);
@@ -59,6 +63,7 @@ function completarEstado(e: Estado, hora: number, rand: () => number) {
   e.introduzidas ??= [...new Set(e.animais.map(an => an.especie))];
   e.objetos ??= objetosIniciais(rand, () => e.proximoId++);
   e.descobertas ??= [];
+  e.genealogia ??= [];
   povoar(e, hora, rand);
   return e;
 }
@@ -212,6 +217,7 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
   for (const a of e.agentes) porId.set(a.id, a);
   for (const an of e.animais) porId.set(an.id, an);
   const nascidos: Animal[] = [];
+  const bebes: Agente[] = [];
 
   const ctx: Contexto = {
     hora: horaBase, horas: HORAS_POR_PASSO, dt: DT,
@@ -223,6 +229,7 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     novoId: prefixo => `${prefixo}_${e.proximoId++}`,
     novaCarcaca: c => { const k = { ...c, id: e.proximoId++ }; e.carcacas.push(k); return k; },
     nascer: a => { nascidos.push(a); porId.set(a.id, a); },
+    nascerAgente: a => { bebes.push(a); porId.set(a.id, a); },
     objetos: e.objetos,
     criarObjeto: o => { const obj = { ...o, id: e.proximoId++ } as Objeto; e.objetos.push(obj); objetosMudaram = true; return obj; },
     objetosMudaram: () => { objetosMudaram = true; },
@@ -242,6 +249,7 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     for (const a of e.agentes) atualizarAgente(a, ctx);
     for (const an of e.animais) atualizarAnimal(an, ctx);
     if (nascidos.length) { e.animais.push(...nascidos); nascidos.length = 0; montarGrade(e.animais); }
+    if (bebes.length) { e.agentes.push(...bebes); bebes.length = 0; }
   }
 
   // objetos: o que está nas mãos acompanha quem carrega; fogo queima, tições esfriam, pilhas se desfazem
@@ -256,6 +264,13 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     const vivos = new Set(ob.restantes.map(o => o.id));
     for (const a of e.agentes) a.tecnico.mao = a.tecnico.mao.filter(id => vivos.has(id));
     e.objetos = ob.restantes;
+  }
+
+  // árvore genealógica: todo mundo que já viveu no vale
+  for (const a of e.agentes) {
+    let p = e.genealogia.find(x => x.id === a.id);
+    if (!p) { p = { id: a.id, nome: a.nome, sexo: a.sexo, mae: a.vida.mae, pai: a.vida.pai, geracao: a.vida.geracao, nascidoEm: a.vida.nascidoEm, morreuEm: null, causa: null }; e.genealogia.push(p); }
+    if (!a.vivo && p.morreuEm === null) { p.morreuEm = ctx.hora; p.causa = a.causaMorte; }
   }
 
   // a mente deliberativa: aplica o que foi pensado e despacha novos pedidos (fila, orçamento)
@@ -303,6 +318,13 @@ export function censo(e: Estado) {
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 const agenteParaRede = (a: Agente, ctxObj: { objetos: Objeto[]; hora: number; agentes: Agente[] }): EntidadeRede => ({
+  idade: descreverFase(a, ctxObj.hora),
+  escala: r2(crescimento(a, ctxObj.hora) * (0.9 + 0.2 * a.vida.genes.altura)),
+  pais: a.vida.mae || a.vida.pai ? `${a.sexo === 'F' ? 'filha' : 'filho'} de ${[a.vida.mae, a.vida.pai].map(id => ctxObj.agentes.find(x => x.id === id)?.nome).filter(Boolean).join(' e ')}` : null,
+  gravida: a.vida.gravidaDesde !== null && a.vida.percebeuGravidez,
+  carregadoPor: a.vida.carregadoPor,
+  doente: a.vida.doenca?.tipo ?? null,
+  geracao: a.vida.geracao,
   fala: a.social.fala && ctxObj.hora - a.social.fala.quando < 0.25
     ? { texto: a.social.fala.palavras.join(' '), traducao: a.social.fala.conceitos.map(c => traduzir(c, ctxObj)).join(' ') } : null,
   relacoes: Object.entries(a.social.relacoes).map(([id, r]) => ({
@@ -356,7 +378,7 @@ const PALAVRA_ACAO: Record<string, string> = {
   comer: 'comer', beber: 'beber água', dormir: 'dormir', descansar: 'descansar', abrigar: 'se abrigar',
   explorar: 'explorar', fugir: 'fugir', aproximar: 'ficar perto do outro', cacar: 'caçar',
   experimentar: 'mexer nas coisas', aquecer: 'se esquentar na luz quente', fazer_fogo: 'fazer a luz quente',
-  lascar: 'fazer pedra afiada', construir: 'empilhar gravetos', cavar: 'cavar raízes', melhorar_caverna: 'arrumar a caverna',
+  lascar: 'fazer pedra afiada', construir: 'empilhar gravetos', cavar: 'cavar raízes', melhorar_caverna: 'arrumar a caverna', cuidar: 'cuidar do bebê',
 };
 
 function descreverEpisodio(e: Episodio) {

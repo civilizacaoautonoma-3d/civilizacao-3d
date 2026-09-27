@@ -27,6 +27,7 @@ engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 80
   data/mente.jsonl   cada deliberação: situação, resposta, o que foi aplicado/rejeitado, consequência
   src/objetos.ts   objetos do mundo (pedra, graveto, fibra, lasca, pilha, fogo) e as regras materiais escondidas
   src/cavernas.ts  cavernas: perceber, entrar pela boca, dormir, virar "casa" por repetição
+  src/vida.ts      ciclo de vida: idade, genes, atração, gravidez, parto, bebê, infância, velhice, febre
   src/social.ts    relações (afeto, confiança, respeito, medo, mágoa, dívida), léxico, naming game, avisos e indicações
   src/tecnicas.ts  gestos primitivos, experimentação, técnicas descobertas, imitação (Fase 10)
   src/corpo.ts     fisiologia humana: fome, sede, sono, energia, frio, dor, saúde, morte
@@ -111,6 +112,16 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   aprender com o outro (respeito), de dicas certas e de disputar o mesmo arbusto (mágoa); laços positivos crescem
   cada vez mais devagar e longe só esfriam. O afeto pesa na vontade de ficar perto. O LLM recebe relações, sons e o
   que ouviu (e não pode usar palavras de línguas reais). O visualizador mostra o balão com o som e a tradução.
+- Fase 12 (vida comprimida, em dias do mundo, ajustável em `VIDA`): gestação 40, bebê até 60 (só mama, é
+  carregado), desmame 120, criança até 240 (a infância molda a personalidade: fome, sustos, cuidado), jovem/fértil
+  aos 300, velhice aos 5 anos, longevidade 6-9 anos pelos genes. Fundadores começam com ~400 dias. Atração cresce
+  entre jovens/adultos de sexos diferentes que convivem e se gostam (não entre parentes nem entre quem cresceu
+  junto: Westermarck); os dois com atração >= 0,5 formam um par. O par dormindo junto: uma chance por noite de
+  gravidez (fertilidade dos genes, fome). Parto com risco; o bebê herda genes (altura, força, resistência,
+  fertilidade, longevidade, pele) e ~45% da personalidade dos pais; endogamia enfraquece. Só a mãe carrega o bebê
+  normalmente; outro adulto leva até a mãe quando ele precisa mamar; a mãe vai buscar o bebê com fome. Crianças
+  andam mais devagar, seguem a mãe, aprendem palavras 2x mais depressa e começam a falar aos 90 dias. Ferimento pode
+  virar febre. Árvore genealógica em `genealogia` do estado. Bebê e criança pequena não usam o LLM.
 - Ações primitivas; comportamentos sociais devem emergir, nunca ser programados como comandos prontos.
 - Estado atual: 2 agentes provisórios (Aru e Nia), personagens são cápsulas até a Fase 4 (Blender).
 - Animais (Fase 6): coelhos (colônias, se escondem em arbustos, dormem na toca), cervos (manadas que migram atrás
@@ -134,9 +145,10 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 ## Fases
 Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência), 6 (natureza, ecologia e animais),
 7 (percepção, memória e aprendizado), 8 (emoções e personalidade), 9 (IA deliberativa), 10 (ações primitivas, descoberta,
-construção e cavernas), 11 (relações e protolinguagem) — todas validadas com os dois
+construção e cavernas), 11 (relações e protolinguagem), 12 (ciclo de vida e gerações) — todas validadas com os dois
 agentes vivos o ano todo. A Fase 9 foi validada com o deliberador de teste; com o Claude de verdade ainda não (precisa de chave).
-Próximas sugeridas: 12 (ciclo de vida, reprodução e gerações), 13 (duas comunidades), 4 (Blender, em paralelo).
+Próximas sugeridas: 13 (duas comunidades), 4 (Blender, em paralelo).
+Pendência da Fase 12: não há como dar comida a um filho desmamado (o Tine passou fome no primeiro inverno).
 Fase 10 ainda não viu: fogo por atrito, levar fogo, boca de caverna tapada (existem nas regras; raros por acaso).
 Pendências: cervos caem de ~24 para ~8 ao longo do ano (migrantes seguram abaixo de 8); javalis ainda investem
 contra humanos ~35 vezes por ano (quase sempre avisos, sem mortes); biomas.

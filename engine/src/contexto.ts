@@ -33,4 +33,6 @@ export interface Contexto {
   criarObjeto: (o: Omit<Objeto, 'id'>) => Objeto;
   objetosMudaram: () => void;
   descoberta: (tecnica: string, descricao: string, quem: Agente, como: 'acaso' | 'imitação', de: Agente | null) => void;
+  // Fase 12
+  nascerAgente: (a: Agente) => void;
 }

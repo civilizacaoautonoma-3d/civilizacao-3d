@@ -10,7 +10,7 @@ import { descobrir, sabe } from './tecnicas';
 
 // regras materiais (o agente não sabe): quantas fibras fazem uma cama, quantos gravetos fecham a boca
 export const CAMA_FIBRAS = 3;
-export const BOCA_GRAVETOS = 5;
+export const BOCA_GRAVETOS = 4;
 export const bocaDa = (c: Caverna) => ({ x: c.x + Math.sin(c.dir) * c.r, z: c.z + Math.cos(c.dir) * c.r });
 export const fibrasPerto = (objs: Objeto[], x: number, z: number, raio: number) =>
   objs.filter(o => o.tipo === 'fibra' && !o.carregadoPor && Math.hypot(o.x - x, o.z - z) < raio).length;

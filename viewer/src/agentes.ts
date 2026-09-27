@@ -116,8 +116,16 @@ export function animarAgentes(dt: number) {
     const emocao = !deitado && s && s.intensidade > 0.25 ? s.dominante : null;
     const forca = s?.intensidade ?? 0;
 
-    v.grupo.position.lerp(v.alvo, k);
-    if (!deitado) {
+    const colo = v.dados.carregadoPor ? agentes.get(v.dados.carregadoPor) : undefined;
+    if (colo) {
+      // no colo: junto ao peito de quem carrega
+      const r = colo.grupo.rotation.y;
+      v.grupo.position.set(colo.grupo.position.x + Math.sin(r) * 0.32, colo.grupo.position.y + 0.95 * colo.grupo.scale.y, colo.grupo.position.z + Math.cos(r) * 0.32);
+      v.grupo.rotation.y = r;
+    } else v.grupo.position.lerp(v.alvo, k);
+    const escala = v.dados.escala ?? 1;
+    v.grupo.scale.setScalar(v.grupo.scale.x + (escala - v.grupo.scale.x) * k * 0.2);
+    if (!deitado && !colo) {
       const diff = ((v.dados.rotacao - v.grupo.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       v.grupo.rotation.y += diff * k;
     }

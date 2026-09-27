@@ -45,6 +45,7 @@ export function descreverSituacao(s: Situacao) {
     s.carrega?.length ? `Nas mãos: ${s.carrega.join(' e ')}.` : '',
     lista('Coisas soltas por perto', s.coisas ?? []),
     lista('O que sente pelos outros', s.relacoes ?? []),
+    lista('Bebês de quem você cuida', s.bebes ?? []),
     lista('Sons que você usa', s.palavras ?? []),
     lista('O que ouviu há pouco', s.ouviu ?? []),
     `Ações possíveis agora: ${s.acoesPossiveis.join(', ')}.`,

@@ -1,6 +1,6 @@
 // Objetos do mundo e as regras materiais que só o motor conhece (Fase 10, documentação seção 16).
 // Os agentes não sabem estas regras: descobrem mexendo nas coisas, por curiosidade, acaso ou necessidade.
-import { ARBUSTOS, ARVORES, PEDRAS, cavernaEm, heightAt } from '../../shared/mundo';
+import { ARBUSTOS, ARVORES, CAVERNAS, PEDRAS, cavernaEm, heightAt } from '../../shared/mundo';
 import type { Especie } from '../../shared/especies';
 import { terraSeca } from './espaco';
 
@@ -86,7 +86,8 @@ export function atualizarObjetos(objs: Objeto[], c: Clima, rand: () => number, p
     if (o.tipo === 'graveto' && o.acesoAte !== undefined && o.acesoAte <= c.hora) { delete o.acesoAte; mudou = true; }
   }
   // pilhas soltas se desfazem com o tempo (vento, bichos); amarradas duram muito mais
-  for (const p of objs) if (p.tipo === 'pilha' && rand() < c.horas / (24 * (3 + 6 * Math.min(3, p.amarrada ?? 0)))) {
+  // encostada na rocha de uma caverna, a pilha fica protegida do vento e dura bem mais
+  for (const p of objs) if (p.tipo === 'pilha' && rand() < c.horas / (24 * (3 + 6 * Math.min(3, p.amarrada ?? 0)) * (pertoDeCaverna(p.x, p.z) ? 4 : 1))) {
     p.qtd = (p.qtd ?? 1) - 1; mudou = true;
   }
   // raio numa tempestade incendeia uma árvore
@@ -100,6 +101,8 @@ export function atualizarObjetos(objs: Objeto[], c: Clima, rand: () => number, p
   if (restantes.length !== objs.length) mudou = true;
   return { mudou, restantes };
 }
+
+const pertoDeCaverna = (x: number, z: number) => CAVERNAS.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 2.5);
 
 export const fogosPerto = (objs: Objeto[], x: number, z: number, raio: number) =>
   objs.filter(o => o.tipo === 'fogo' && Math.hypot(o.x - x, o.z - z) < raio);

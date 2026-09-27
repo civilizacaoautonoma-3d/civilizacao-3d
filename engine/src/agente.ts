@@ -18,12 +18,14 @@ import { TAREFAS, dormiuNaPilha, executarTarefa, novoEstadoTecnico, perceberObje
 import { fogosPerto } from './objetos';
 import { cavernaPreferida, conforto, dentroDeCaverna, dormiuNaCaverna, irParaCaverna, perceberCavernas, type CavernaConhecida } from './cavernas';
 import { CAVERNAS } from '../../shared/mundo';
-import { mudarRelacao, novoEstadoSocial, pulsoSocial, vontadeDeFicarPerto, type EstadoSocial } from './social';
+import { mudarRelacao, novoEstadoSocial, pulsoSocial, relacao, vontadeDeFicarPerto, type EstadoSocial } from './social';
+import { bebesQueCuida, carregarSeFor, cuidar, ehBebe, ehCrianca, novaVida, passoDaVida, talvezInfeccionar, tentarConceber,
+         velocidadeDaIdade, vontadeDeCuidar, type EstadoVida } from './vida';
 
 export type { Contexto } from './contexto';
 
 export type Objetivo = 'beber' | 'comer' | 'cacar' | 'fugir' | 'dormir' | 'descansar' | 'abrigar' | 'explorar' | 'aproximar'
-  | 'experimentar' | 'aquecer' | 'fazer_fogo' | 'lascar' | 'construir' | 'cavar' | 'melhorar_caverna';
+  | 'experimentar' | 'aquecer' | 'fazer_fogo' | 'lascar' | 'construir' | 'cavar' | 'melhorar_caverna' | 'cuidar';
 
 // lugares com recursos (o "mapa" de onde tem água e comida)
 export interface Lembranca {
@@ -76,6 +78,8 @@ export interface Agente {
   cavernaFalhou: Record<number, number>;   // não conseguiu entrar: tenta outra coisa até essa hora
   // Fase 11: relações e protolinguagem
   social: EstadoSocial;
+  // Fase 12: idade, genes, gravidez, bebê, infância, velhice, doença
+  vida: EstadoVida;
 }
 
 const RAIO = 0.35;
@@ -110,6 +114,7 @@ export function completarAgente(a: Partial<Agente> & Pick<Agente, 'corpo'>): Age
   a.deliberacao ??= novoEstadoDeliberativo();
   a.tecnico ??= novoEstadoTecnico();
   a.social ??= novoEstadoSocial();
+  a.vida ??= novaVida(-400 * 24, a.id ?? '');   // os fundadores chegam ao vale jovens adultos
   a.cavernas ??= {}; a.lar ??= null; a.indoCaverna ??= null; a.indoCavernaDesde ??= 0; a.cavernaFalhou ??= {};
   a.deliberacao.planoPedido ??= -1;
   return a as Agente;
@@ -393,7 +398,7 @@ function mover(a: Agente, ctx: Contexto, correr = false): 'chegou' | 'bloqueado'
   if (!a.alvo) return 'chegou';
   const dx = a.alvo.x - a.x, dz = a.alvo.z - a.z, dist = Math.hypot(dx, dz);
   if (dist < 0.8) return 'chegou';
-  const vel = a.corpo.energia < 0.15 ? 0.8 : correr ? CORRER : 1.4;
+  const vel = (a.corpo.energia < 0.15 ? 0.8 : correr ? CORRER : 1.4) * velocidadeDaIdade(a, ctx.hora);
   const passo = Math.min(dist, vel * ctx.dt);
   const nx = a.x + (dx / dist) * passo, nz = a.z + (dz / dist) * passo;
   if (!terraSeca(nx, nz)) {
@@ -462,6 +467,7 @@ export function ferirAgente(a: Agente, dano: number, agressor: Animal, ctx: Cont
   const medoAntes = medoDaEspecie(a, agressor.especie, ctx);
   a.corpo.saude = Math.max(0, a.corpo.saude - dano);
   a.corpo.dor = Math.min(1, a.corpo.dor + 0.5);
+  talvezInfeccionar(a, ctx);
   const dormia = a.acao === 'dormindo';
   if (dormia) a.acao = 'parado';
   a.ameaca = { id: agressor.id, x: agressor.x, z: agressor.z };
@@ -483,6 +489,22 @@ export function ferirAgente(a: Agente, dano: number, agressor: Animal, ctx: Cont
     ferirAnimal(agressor, 0.1 + 0.1 * a.sentimentos.emocoes.raiva, { id: a.id, x: a.x, z: a.z, tipo: 'humano', nome: a.nome }, ctx);
 }
 
+// com quem quer estar: a criança quer a mãe (ou o pai); os outros, quem mais gostam e com quem formam par
+export function companheiroPreferido(a: Agente, ctx: Contexto): Agente | undefined {
+  const vivos = ctx.agentes.filter(o => o !== a && o.vivo && !ehBebe(o, ctx.hora));
+  if (ehCrianca(a, ctx.hora)) {
+    const pais = vivos.filter(o => o.id === a.vida.mae || o.id === a.vida.pai);
+    if (pais.length) return pais.sort((p, q) => Math.hypot(p.x - a.x, p.z - a.z) - Math.hypot(q.x - a.x, q.z - a.z))[0];
+  }
+  let melhor: Agente | undefined, nota = -Infinity;
+  for (const o of vivos) {
+    const r = relacao(a, o.id);
+    const n = r.afeto + (r.atracao ?? 0) - r.ressentimento - Math.hypot(o.x - a.x, o.z - a.z) / 400;
+    if (n > nota) { nota = n; melhor = o; }
+  }
+  return melhor;
+}
+
 // ---------- Decisão por utilidade ----------
 function decidir(a: Agente, ctx: Contexto) {
   const c = a.corpo;
@@ -499,7 +521,7 @@ function decidir(a: Agente, ctx: Contexto) {
   const receio = Math.max(crenca(a.mente, `contexto:${ctx.clima}`), ctx.noite ? crenca(a.mente, 'contexto:noite') : 0);
   // emoções, humores e personalidade pesam em tudo
   const P = a.personalidade, E = a.sentimentos.emocoes, H = a.sentimentos.humor;
-  const outro = ctx.agentes.find(o => o !== a && o.vivo);
+  const outro = companheiroPreferido(a, ctx);
   const notas: Record<Objetivo, number> = {
     fugir: a.ameaca ? (atacandoMe ? 3 : 1.1) : 0,
     beber: Math.pow(c.sede, 1.4) * 1.2 + (c.sede > 0.9 ? 0.5 : 0),
@@ -519,6 +541,8 @@ function decidir(a: Agente, ctx: Contexto) {
     aproximar: outro && distancia(a, outro) > 4
       ? (() => { const v = vontadeDeFicarPerto(a, outro, ctx.hora); return H.solidao * (0.3 + 0.7 * P.extroversao) * 0.8 * v.fator + v.chamado; })() : 0,
     experimentar: 0, aquecer: 0, fazer_fogo: 0, lascar: 0, construir: 0, cavar: 0, melhorar_caverna: 0,
+    // um bebê que chora ou ficou sozinho chama quem se apegou a ele
+    cuidar: vontadeDeCuidar(a, ctx).nota * 1.6,
   };
   // o que ele sabe fazer com as coisas (e a curiosidade de mexer nelas)
   for (const [k, v] of Object.entries(utilidadesTecnicas(a, ctx, temComida)) as [Objetivo, number][]) notas[k] = v;
@@ -805,6 +829,7 @@ function executar(a: Agente, ctx: Contexto) {
         : a.abrigado ? 'foi dormir sob uma árvore' : 'foi dormir');
       dormiuNaPilha(a, ctx);
       dormiuNaCaverna(a, ctx);
+      tentarConceber(a, ctx);
       // no sono, a mente junta as lembranças e tira conclusões (algumas erradas)
       if (ctx.hora - a.refletiuEm > 12) {
         // quem é ansioso liga mais coincidências; quem é aberto questiona mais
@@ -819,6 +844,14 @@ function executar(a: Agente, ctx: Contexto) {
     case 'experimentar': case 'aquecer': case 'fazer_fogo': case 'lascar': case 'construir': case 'cavar': case 'melhorar_caverna':
       executarTarefa(a, ctx, a.objetivo as Tarefa);
       return;
+
+    case 'cuidar': {
+      const intencao = cuidar(a, ctx, (p, perto) => irParaPonto(a, ctx, p, perto));
+      if (intencao === null) { a.objetivo = null; a.acao = 'parado'; a.intencao = 'cuidando do bebê'; return; }
+      a.intencao = intencao;
+      if (intencao.startsWith('amamentando')) a.acao = 'parado';
+      return;
+    }
 
     case 'descansar':
       a.acao = 'parado'; a.intencao = 'descansando';
@@ -902,7 +935,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
   for (const m of a.memoria) m.forca -= ctx.horas / 120;   // sem rever, esquece um lugar em ~5 dias
   if (a.memoria.some(m => m.forca <= 0)) a.memoria = a.memoria.filter(m => m.forca > 0);
   esquecer(a.mente, ctx.horas);
-  const companheiro = ctx.agentes.find(o => o !== a && o.vivo);
+  const companheiro = companheiroPreferido(a, ctx);
   atualizarSentimentos(a.sentimentos, a.personalidade, {
     horas: ctx.horas, hora: ctx.hora,
     fome: a.corpo.fome, sede: a.corpo.sede, frio: a.corpo.frio, dor: a.corpo.dor, energia: a.corpo.energia, saude: a.corpo.saude,
@@ -914,23 +947,32 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
   if (a.corpo.saude <= 0) {
     a.vivo = false; a.acao = 'morto';
     soltarTudo(a, ctx);
-    a.causaMorte = causaDaMorte(a.corpo);
+    a.causaMorte = a.vida.velhice && a.corpo.fome < 1 && a.corpo.sede < 1 ? 'velhice' : a.vida.doenca && a.corpo.dor < 0.2 ? a.vida.doenca.tipo : causaDaMorte(a.corpo);
+    if (a.vida.carregando) { const b = ctx.agentes.find(x => x.id === a.vida.carregando); if (b) b.vida.carregadoPor = null; a.vida.carregando = null; }
     a.intencao = `morreu de ${a.causaMorte}`;
     ev(a, ctx, `morreu de ${a.causaMorte}`);
     // quem viu a morte guarda isso para sempre (e pode ligar a coisas que não têm nada a ver)
     for (const o of ctx.agentes) {
-      if (o === a || !o.vivo || Math.hypot(o.x - a.x, o.z - a.z) > 30) continue;
+      if (o === a || !o.vivo || ehBebe(o, ctx.hora)) continue;
+      const laco = relacao(o, a.id).afeto;
+      if (Math.hypot(o.x - a.x, o.z - a.z) > 30 && !(laco > 0.4 && Math.hypot(o.x - a.x, o.z - a.z) < 80)) continue;
       episodio(o, ctx, 'viu_morte', `agente:${a.id}`, -1, 1);
       sentir(o.sentimentos, o.personalidade, 'tristeza', 1);
       o.sentimentos.humor.tristeza = Math.min(1, o.sentimentos.humor.tristeza + 0.5);
       viver(o.sentimentos, 'luto', ctx.hora, 72);
-      pedirEvento(o, ctx, 'você viu a outra pessoa morrer');
+      pedirEvento(o, ctx, laco > 0.6 ? 'alguém de quem você gostava muito morreu' : 'você viu alguém morrer');
       ev(o, ctx, `viu ${a.nome} morrer e ficou de luto`);
     }
     return;
   }
 
   if (a.corpo.frio > 0.8 && ctx.rand() < ctx.horas) episodio(a, ctx, 'sentiu_frio', 'frio', -0.4, 0.4);
+
+  if (passoDaVida(a, ctx)) {
+    if (--a.proximaDecisao <= 0) { a.proximaDecisao = 10; pulsoSocial(a, ctx, 10 * ctx.horas); }
+    return;
+  }
+  carregarSeFor(a, ctx);
 
   if (ctx.hora < a.ocupadoAte) return;
 
