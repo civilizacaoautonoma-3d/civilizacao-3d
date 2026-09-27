@@ -35,6 +35,10 @@ export interface EntidadeRede {
     personalidade: Record<string, number>;
     jeito: string[];           // os traços mais marcantes, em palavras
   };
+  tecnicas: string[];          // o que já sabe fazer com as coisas (Fase 10)
+  carrega: string[];           // o que tem nas mãos
+  cavernas: number;            // quantas cavernas conhece
+  casa: string | null;         // a caverna para onde sempre volta (se já tem uma)
 }
 
 export interface AnimalRede {
@@ -52,10 +56,20 @@ export interface CarcacaRede {
   porcoes: number; estragada: boolean;
 }
 
+export type TipoObjetoRede = 'pedra' | 'graveto' | 'fibra' | 'lasca' | 'carne' | 'pilha' | 'fogo';
+export interface ObjetoRede {
+  id: number; tipo: TipoObjetoRede; x: number; z: number;
+  carregadoPor: string | null;
+  qtd?: number; amarrada?: number;   // pilha
+  forca?: number;                    // fogo: 0..1 (quanto combustível ainda tem)
+  aceso?: boolean;                   // graveto em brasa
+}
+
 export interface MsgBoasVindas { tipo: 'boas-vindas'; seed: number; ticksPorSegundo: number; modo: string }
 export interface MsgEstado {
   tipo: 'estado'; tick: number; msMundo: number; velocidade: number;
   entidades: EntidadeRede[]; animais: AnimalRede[]; carcacas: CarcacaRede[]; frutos: number[];
+  objetos?: ObjetoRede[];   // só vem quando algo mudou (ou de tempos em tempos); senão vale a última lista
 }
 export type MensagemServidor = MsgBoasVindas | MsgEstado;
 

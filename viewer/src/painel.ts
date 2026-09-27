@@ -35,6 +35,9 @@ function htmlAgente(e: EntidadeRede) {
     ${barra('Saúde', n.saude, '#4cc46a')}
     ${barra('Frio', n.frio, '#9ad4e8')}
     ${n.dor > 0.01 ? barra('Dor', n.dor, '#d65c5c') : ''}
+    ${e.casa ? `<p class="memoria">Casa: ${e.casa}</p>` : e.cavernas ? `<p class="memoria">Conhece ${e.cavernas} caverna(s)</p>` : ''}
+    ${e.carrega?.length ? `<p class="memoria">Nas mãos: ${e.carrega.join(' e ')}</p>` : ''}
+    ${e.tecnicas?.length ? `<p class="titulo">Sabe fazer</p><ul class="lista">${e.tecnicas.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}
     <p class="memoria">Lembra de ${e.memoria.agua} lugar(es) com água, ${e.memoria.comida} arbusto(s)` +
     `${e.memoria.carne ? ` e ${e.memoria.carne} carcaça(s)` : ''}${caca}</p>
     ${mente(e)}`;

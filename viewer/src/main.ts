@@ -10,6 +10,8 @@ import { criarArbustos, atualizarFrutos } from './arbustos';
 import { agentes, iniciarAgentes, aplicarEntidades, animarAgentes } from './agentes';
 import { animais, iniciarAnimais, aplicarAnimais, animarAnimais, contarAnimais } from './animais';
 import { atualizarPainel } from './painel';
+import { iniciarObjetos, aplicarObjetos, animarObjetos } from './objetos';
+import { criarCavernas } from './cavernas';
 import { ehToque, toque, iniciarToque } from './toque';
 
 const EYE_HEIGHT = 1.7;
@@ -195,8 +197,10 @@ const dummy = new THREE.Object3D();
 
 // ---------- Arbustos e agentes ----------
 criarArbustos(scene);
+criarCavernas(scene);
 iniciarAgentes(scene);
 iniciarAnimais(scene);
+iniciarObjetos(scene);
 
 // ---------- Conexão com o motor ----------
 const relogio = { msMundo: Date.now(), recebidoEm: performance.now(), velocidade: 1 };
@@ -216,6 +220,7 @@ function conectar() {
       aplicarEntidades(msg.entidades);
       aplicarAnimais(msg.animais ?? [], msg.carcacas ?? []);
       atualizarFrutos(msg.frutos);
+      aplicarObjetos(msg.objetos);
     }
   };
 }
@@ -422,6 +427,7 @@ function animate() {
   if (controls.isLocked || toque.ativo) updatePlayer(dt);
   animarAgentes(dt);
   animarAnimais(dt, camera);
+  animarObjetos(dt, camera);
   atualizarPainel(camera);
   const { tempo, clima } = updateSky(dt);
 

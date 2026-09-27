@@ -1,10 +1,12 @@
 // Simulação sem interface para validar mudanças no motor.
 // Uso: npx tsx scripts/validar.ts [dias] [--tudo] [--rastrear Nome --desde Dia]
+//   --salvar arq / --carregar arq: continua uma validação longa em blocos (o [dias] é o dia final, contado desde o início)
 //   --rastrear mostra, a cada meia hora do mundo, o que aquele agente está fazendo a partir do dia indicado.
 // Roda um mundo novo (não toca em data/) o mais rápido possível e mostra o censo diário.
 import { SEED, mulberry32 } from '../../shared/mundo';
 import { TEMPO, tempoDoMundo } from '../../shared/clima';
-import { DT, censo, mundoNovo, passoDoMundo } from '../src/simulacao';
+import fs from 'node:fs';
+import { DT, censo, horaDoMundo, migrar, mundoNovo, passoDoMundo } from '../src/simulacao';
 import { configurarMente, type RegistroDeliberacao } from '../src/deliberacao';
 import { provedorTeste } from '../src/provedores';
 
@@ -19,9 +21,11 @@ const VEL = 60;
 const deliberacoes: RegistroDeliberacao[] = [];
 configurarMente({ provedor: provedorTeste, registrar: r => deliberacoes.push(r), avisar: t => registrar(t) });
 
-const e = mundoNovo(0, mulberry32(SEED * 17));
-const rand = mulberry32(SEED * 31);
-let ms = TEMPO.INICIO_DO_MUNDO;
+const carregar = arg('--carregar'), salvar = arg('--salvar');
+const salvo = carregar ? JSON.parse(fs.readFileSync(carregar, 'utf8')) : null;
+let ms: number = salvo?.ms ?? TEMPO.INICIO_DO_MUNDO;
+const rand = mulberry32(SEED * 31 + (salvo?.estado.tick ?? 0));
+const e = salvo ? migrar(salvo.estado, horaDoMundo(ms), rand)! : mundoNovo(0, mulberry32(SEED * 17));
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const carimbo = () => { const t = tempoDoMundo(ms); return `D${pad(t.diaDoAno)} ${pad(t.hora)}:${pad(t.minuto)}`; };
@@ -33,7 +37,7 @@ function registrar(t: string) {
   contagem.set(tipo, (contagem.get(tipo) ?? 0) + 1);
   if (t.startsWith('Censo')) return;
   const deAgente = /^(Aru|Nia) /.test(t);
-  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou/.test(t)) console.log(`  [${carimbo()}] ${t}`);
+  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio/.test(t)) console.log(`  [${carimbo()}] ${t}`);
 }
 
 const inicio = performance.now();
@@ -63,6 +67,15 @@ console.log(`\nDeliberações: ${['plano', 'evento', 'reflexao', 'consequencia']
 const rejeicoes = deliberacoes.flatMap(d => d.rejeitado ?? []);
 console.log(`  aplicadas: ${deliberacoes.filter(d => d.aplicado && d.tipo !== 'consequencia').length} · com rejeição: ${rejeicoes.length} · erros: ${deliberacoes.filter(d => d.erro).length}`);
 for (const d of deliberacoes.filter(x => x.tipo === 'evento').slice(0, 3)) console.log(`  evento (${d.agente}): ${d.situacao?.evento} -> ${d.aplicado ?? d.erro}`);
+console.log(`\nDescobertas (Fase 10): ${e.descobertas.length}`);
+for (const d of e.descobertas) console.log(`  dia ${Math.floor(d.quando / 24) + 1} ${d.quem} (${d.como}): ${d.descricao}` +
+  (d.transmitidaPara.length ? ` -> passou para ${d.transmitidaPara.map(t => `${t.quem} (dia ${Math.floor(t.quando / 24) + 1})`).join(', ')}` : ''));
+for (const a of e.agentes) console.log(`  ${a.nome} sabe: ${Object.keys(a.tecnico.sabe).join(', ') || 'nada'} · tentou ${Object.values(a.tecnico.tentou).reduce((s, v) => s + v, 0)} vezes`);
+for (const a of e.agentes) console.log(`  ${a.nome} cavernas: ${JSON.stringify(a.cavernas)} · casa: ${a.lar ?? 'nenhuma'}`);
+const tiposObj: Record<string, number> = {};
+for (const o of e.objetos) tiposObj[o.tipo] = (tiposObj[o.tipo] ?? 0) + 1;
+console.log(`  objetos no mundo: ${Object.entries(tiposObj).map(([k, v]) => `${v} ${k}`).join(', ')}`);
 console.log(`\n${dias} dias simulados em ${seg.toFixed(1)} s`);
 console.log('\nEventos:');
 for (const [k, v] of [...contagem].sort((a, b) => b[1] - a[1])) if (!k.startsWith('Censo')) console.log(`  ${String(v).padStart(6)}  ${k}`);
+if (salvar) fs.writeFileSync(salvar, JSON.stringify({ estado: e, ms }));

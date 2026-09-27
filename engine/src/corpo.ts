@@ -3,6 +3,10 @@ import type { Acao, Necessidades } from '../../shared/protocolo';
 export interface Ambiente {
   temperatura: number; chuva: number; vento: number;
   noite: boolean; abrigado: boolean; acompanhado: boolean;
+  fogo?: boolean;   // perto de um fogo aceso
+  caverna?: boolean; // dentro de uma caverna: a rocha segura o calor
+  cama?: boolean;    // deitado sobre capim
+  fechada?: boolean; // a boca da caverna tapada com gravetos
 }
 
 const lim = (v: number) => Math.min(1, Math.max(0, v));
@@ -19,6 +23,10 @@ export function atualizarCorpo(n: Necessidades, horas: number, acao: Acao, amb: 
   let sentida = amb.temperatura;
   if (!amb.abrigado) sentida -= amb.chuva * 5 + amb.vento * 3;
   if (amb.acompanhado) sentida += 3;   // corpos próximos se aquecem
+  if (amb.fogo) sentida += 9;          // o calor do fogo
+  if (amb.caverna) sentida += 4;
+  if (amb.caverna && amb.fechada) sentida += 3;
+  if (amb.cama && dormindo) sentida += 3;
   if (dormindo) sentida -= 2;
   if (andando) sentida += 1.5;
   if (correndo) sentida += 3;
@@ -30,7 +38,7 @@ export function atualizarCorpo(n: Necessidades, horas: number, acao: Acao, amb: 
   n.sede = lim(n.sede + horas * (1 / 10) * metabolismo * (1 + calor));
 
   if (dormindo) {
-    n.sono = lim(n.sono - horas / 7);
+    n.sono = lim(n.sono - horas / (amb.cama ? 5.5 : 7));   // no capim o sono é mais fundo
     n.energia = lim(n.energia + horas / 5);
   } else {
     n.sono = lim(n.sono + horas * (1 / 18) * (amb.noite ? 1.5 : 1));

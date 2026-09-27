@@ -136,3 +136,55 @@ export const ARBUSTOS: Arbusto[] = [];
     if (h > 1.5 && h < 12 && livre(x, z)) ARBUSTOS.push({ x, z, h, max: 4 + Math.floor(r() * 4) });
   }
 }
+
+// ---------- Cavernas (gerador próprio: não altera árvores, pedras e arbustos) ----------
+// Abrigos naturais em encostas: um domo de rocha com a boca virada para baixo do morro.
+// As paredes são obstáculos (só se entra pela boca); dentro não chove nem venta.
+export interface Caverna { id: number; x: number; z: number; r: number; dir: number; h: number; entrada: { x: number; z: number } }
+export const CAVERNAS: Caverna[] = [];
+{
+  const r = mulberry32(SEED + 2000);
+  const R = 3.2;
+  const livre = (x: number, z: number, raio: number) =>
+    OBSTACULOS.every(o => Math.hypot(o.x - x, o.z - z) > o.r + raio) && ARBUSTOS.every(b => Math.hypot(b.x - x, b.z - z) > raio + 1);
+  const firme = (x: number, z: number) => { const h = heightAt(x, z); return h > 1.5 && h < 14; };
+  for (const inclinacaoMin of [0.3, 0.18, 0]) {
+    for (let t = 0; CAVERNAS.length < 4 && t < 20000; t++) {
+      // a primeira fica a um dia de caminhada curta do ponto inicial; as outras, espalhadas pelo vale
+      let x: number, z: number;
+      if (CAVERNAS.length === 0) {
+        const ang = r() * Math.PI * 2, d = 45 + r() * 45;
+        x = PONTO_INICIAL.x + Math.cos(ang) * d; z = PONTO_INICIAL.z + Math.sin(ang) * d;
+      } else { x = (r() - 0.5) * (WORLD_SIZE - 50); z = (r() - 0.5) * (WORLD_SIZE - 50); }
+      if (!firme(x, z) || Math.hypot(x - PONTO_INICIAL.x, z - PONTO_INICIAL.z) < 30) continue;
+      if (CAVERNAS.some(c => Math.hypot(c.x - x, c.z - z) < 70)) continue;
+      const gx = heightAt(x + 3, z) - heightAt(x - 3, z), gz = heightAt(x, z + 3) - heightAt(x, z - 3);
+      if (Math.hypot(gx, gz) / 6 < inclinacaoMin) continue;
+      const dir = Math.atan2(-gx, -gz);   // boca para baixo do morro (frente = sin dir, cos dir)
+      const entrada = { x: x + Math.sin(dir) * (R + 1.6), z: z + Math.cos(dir) * (R + 1.6) };
+      if (!firme(entrada.x, entrada.z) || !livre(x, z, R + 1.2) || !livre(entrada.x, entrada.z, 1.5)) continue;
+      let dentroFirme = true;
+      for (let a = 0; a < 6.28; a += 0.8) if (!firme(x + Math.sin(a) * R, z + Math.cos(a) * R)) dentroFirme = false;
+      if (!dentroFirme) continue;
+      CAVERNAS.push({ id: CAVERNAS.length, x, z, r: R, dir, h: heightAt(x, z), entrada });
+    }
+  }
+  // paredes: blocos de rocha em volta, menos na boca
+  for (const c of CAVERNAS) {
+    for (let a = 0; a < Math.PI * 2; a += 0.42) {
+      const rel = Math.atan2(Math.sin(a - c.dir), Math.cos(a - c.dir));
+      if (Math.abs(rel) < 0.7) continue;
+      const o = { x: c.x + Math.sin(a) * c.r, z: c.z + Math.cos(a) * c.r, r: 0.75 };
+      OBSTACULOS.push(o);
+      const k = chaveObs(Math.floor(o.x / CELULA_OBS), Math.floor(o.z / CELULA_OBS));
+      const lista = gradeObs.get(k);
+      if (lista) lista.push(o); else gradeObs.set(k, [o]);
+    }
+  }
+}
+
+// dentro de qual caverna está este ponto (ou nenhuma)
+export function cavernaEm(x: number, z: number): Caverna | null {
+  for (const c of CAVERNAS) if (Math.hypot(c.x - x, c.z - z) < c.r - 0.5) return c;
+  return null;
+}

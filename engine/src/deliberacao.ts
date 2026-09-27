@@ -8,9 +8,12 @@ import type { Especie } from '../../shared/especies';
 import type { Agente, Objetivo } from './agente';
 import type { Contexto } from './contexto';
 import { emocaoDominante, descreverPersonalidade } from './emocoes';
+import { CAVERNAS } from '../../shared/mundo';
+import { PALAVRAS_LIBERADAS, descreverMao, descreverTecnicas, sabe } from './tecnicas';
 
 // ---------- Contrato com o LLM ----------
-export const ACOES = ['comer', 'beber', 'dormir', 'descansar', 'abrigar', 'explorar', 'fugir', 'aproximar', 'cacar'] as const;
+export const ACOES = ['comer', 'beber', 'dormir', 'descansar', 'abrigar', 'explorar', 'fugir', 'aproximar', 'cacar',
+  'experimentar', 'aquecer', 'fazer_fogo', 'lascar', 'construir', 'cavar', 'melhorar_caverna'] as const;
 export type AcaoLLM = typeof ACOES[number] & Objetivo;
 export type TipoDeliberacao = 'plano' | 'evento' | 'reflexao';
 
@@ -30,7 +33,7 @@ export type RespostaReflexao = z.infer<typeof EsquemaReflexao>;
 export type Resposta = RespostaPlano | RespostaEvento | RespostaReflexao;
 
 // ---------- O que o agente sabe (montado só com o que é dele) ----------
-export interface LugarConhecido { id: string; tipo: 'agua' | 'comida' | 'carne'; descricao: string }
+export interface LugarConhecido { id: string; tipo: 'agua' | 'comida' | 'carne' | 'abrigo'; descricao: string }
 export interface Situacao {
   tipo: TipoDeliberacao;
   evento: string | null;
@@ -39,6 +42,9 @@ export interface Situacao {
   lugares: LugarConhecido[]; perigos: string[];
   crencas: string[]; lembrancas: string[]; percebe: string[];
   outro: string;
+  sabe: string[];       // o que já descobriu fazer com as coisas (Fase 10)
+  carrega: string[];    // o que tem nas mãos
+  coisas: string[];     // coisas soltas que vê por perto
   acoesPossiveis: AcaoLLM[];
   diario: string[];
 }
@@ -104,11 +110,13 @@ const PROIBIDAS = [
 ];
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const RE_PROIBIDAS = PROIBIDAS.map(p => new RegExp(`\\b${semAcento(p)}`, 'i'));
-export function anacronismo(texto: string): string | null {
+// quem já conhece uma técnica tem palavra para ela (quem descobriu o fogo pode chamar de fogo)
+export function anacronismo(texto: string, liberadas: string[] = []): string | null {
   const t = semAcento(texto);
-  for (let i = 0; i < PROIBIDAS.length; i++) if (RE_PROIBIDAS[i].test(t)) return PROIBIDAS[i];
+  for (let i = 0; i < PROIBIDAS.length; i++) if (RE_PROIBIDAS[i].test(t) && !liberadas.includes(PROIBIDAS[i])) return PROIBIDAS[i];
   return null;
 }
+export const palavrasLiberadas = (a: Agente) => Object.keys(a.tecnico.sabe).flatMap(t => PALAVRAS_LIBERADAS[t] ?? []);
 
 // ---------- Montar a situação (só o que o agente sabe) ----------
 const DIRECAO = ['norte', 'nordeste', 'leste', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'];
@@ -148,6 +156,15 @@ export function montarSituacao(a: Agente, ctx: Contexto, tipo: TipoDeliberacao, 
       : m.frutos > 0 ? `um arbusto com ${m.frutos > 3 ? 'muitos' : 'alguns'} frutos` : 'um arbusto que estava sem frutos';
     lugares.push({ id, tipo: m.tipo, descricao: `${oQue}, ${ondeFica(a, m.x, m.z)}` });
   });
+  // cavernas que já viu (marcos que não se esquecem)
+  for (const [idCav, k] of Object.entries(a.cavernas ?? {})) {
+    const cav = CAVERNAS[Number(idCav)];
+    if (!cav) continue;
+    const id = `L${lugares.length + 1}`;
+    a.deliberacao.lugares[id] = { x: cav.x, z: cav.z };
+    const vezes = k.noites === 0 ? '' : k.noites === 1 ? ', onde você já dormiu uma vez' : `, onde você já dormiu ${k.noites} vezes`;
+    lugares.push({ id, tipo: 'abrigo', descricao: `um buraco na rocha onde não chove nem venta${a.lar === cav.id ? ', o lugar onde você sempre volta para dormir' : vezes}, ${ondeFica(a, cav.x, cav.z)}` });
+  }
 
   const outro = ctx.agentes.find(o => o !== a && o.vivo);
   const dOutro = outro ? Math.hypot(outro.x - a.x, outro.z - a.z) : Infinity;
@@ -156,6 +173,18 @@ export function montarSituacao(a: Agente, ctx: Contexto, tipo: TipoDeliberacao, 
   if (a.ameaca) possiveis.push('fugir');
   if (outro) possiveis.push('aproximar');
   if (a.presaVista) possiveis.push('cacar');
+  // mexer nas coisas é sempre possível; o resto, só para quem já descobriu como
+  if (!ctx.noite) possiveis.push('experimentar');
+  const fogoVisto = !!a.tecnico.fogoConhecido || ctx.objetos.some(o => o.tipo === 'fogo' && Math.hypot(o.x - a.x, o.z - a.z) < 60);
+  if (sabe(a, 'calor-do-fogo') && fogoVisto) possiveis.push('aquecer');
+  if (sabe(a, 'fogo-atrito') && !fogoVisto && ctx.chuva < 0.3) possiveis.push('fazer_fogo');
+  if (sabe(a, 'lascar')) possiveis.push('lascar');
+  if (sabe(a, 'abrigo-pilha') && !ctx.noite) possiveis.push('construir');
+  if (sabe(a, 'cavar-raizes')) possiveis.push('cavar');
+  if ((sabe(a, 'cama-capim') || sabe(a, 'fechar-boca')) && Object.keys(a.cavernas ?? {}).length && !ctx.noite) possiveis.push('melhorar_caverna');
+  const NOME_COISA: Record<string, string> = { pedra: 'pedras', graveto: 'gravetos', fibra: 'fibras de capim', lasca: 'pedras afiadas',
+    carne: 'carne', pilha: 'uma pilha de gravetos', fogo: 'a luz quente' };
+  const coisas = [...new Set(ctx.objetos.filter(o => !o.carregadoPor && Math.hypot(o.x - a.x, o.z - a.z) < 15).map(o => NOME_COISA[o.tipo]))];
 
   return {
     tipo, evento: evento ? neutralizar(evento) : null,
@@ -172,6 +201,7 @@ export function montarSituacao(a: Agente, ctx: Contexto, tipo: TipoDeliberacao, 
     percebe: a.percebidos.slice(0, 5).map(p => `${p.ouvido ? 'ouve' : 'vê'} ${p.certeza < 0.5 ? 'algo que parece ' : ''}um ${NOME_NEUTRO[p.especie]} ${ondeFica(a, p.x, p.z)}`),
     outro: !outro ? 'não existe mais ninguém como você por perto' : dOutro < 10 ? 'a outra pessoa está perto de você'
       : dOutro < 40 ? 'a outra pessoa está por perto, mas não junto' : 'não sabe onde está a outra pessoa',
+    sabe: descreverTecnicas(a), carrega: descreverMao(a, ctx), coisas,
     acoesPossiveis: [...new Set(possiveis)],
     diario: a.deliberacao.diario.slice(-2),
   };
@@ -270,9 +300,9 @@ export function pulsoDaMente(agentes: Agente[], hora: number) {
 export const estadoDaFila = () => ({ esperando: fila.length, emAndamento, chamadasNaUltimaHora: chamadasRecentes.length });
 
 // ---------- Validar e aplicar: o motor tem a palavra final ----------
-function limparTexto(texto: string, rejeitado: string[], onde: string) {
+function limparTexto(texto: string, rejeitado: string[], onde: string, liberadas: string[] = []) {
   const t = texto.trim().slice(0, 240);
-  const palavra = anacronismo(t);
+  const palavra = anacronismo(t, liberadas);
   if (palavra) { rejeitado.push(`${onde}: anacronismo ("${palavra}")`); return null; }
   return t;
 }
@@ -286,6 +316,7 @@ function aplicarResposta(agentes: Agente[], pedido: Pedido, resposta: Resposta |
   if (!a || !a.vivo) { registro.erro = 'agente não está mais vivo'; config.registrar(registro); return; }
   if (!resposta) { registro.erro = erro ?? 'sem resposta'; config.registrar(registro); return; }
   const d = a.deliberacao, rej = registro.rejeitado!;
+  const lib = palavrasLiberadas(a);
   const lugarValido = (id: string | null) => {
     if (id === null) return null;
     if (d.lugares[id]) return id;
@@ -300,7 +331,7 @@ function aplicarResposta(agentes: Agente[], pedido: Pedido, resposta: Resposta |
     const evitar = r.evitar.filter(id => d.lugares[id]).slice(0, 3);
     d.plano = { dia: Math.floor(hora / 24), itens, evitar };
     registro.aplicado = `plano: ${itens.map(i => `${i.acao}${i.lugar ? '@' + i.lugar : ''}×${i.peso}`).join(', ') || '(vazio)'}${evitar.length ? ` · evitar ${evitar.join(',')}` : ''}`;
-    const t = limparTexto(r.pensamento, rej, 'pensamento');
+    const t = limparTexto(r.pensamento, rej, 'pensamento', lib);
     if (t) { d.pensamento = t; d.pensadoEm = hora; }
   } else if (pedido.tipo === 'evento') {
     const r = resposta as RespostaEvento;
@@ -310,15 +341,15 @@ function aplicarResposta(agentes: Agente[], pedido: Pedido, resposta: Resposta |
       d.acompanhar = { id: pedido.id, ate: hora + 1, saude: a.corpo.saude, fome: a.corpo.fome, sede: a.corpo.sede };
       registro.aplicado = `decisão: ${r.acao}${d.decisao.lugar ? ' em ' + d.decisao.lugar : ''} (por 1 hora)`;
     }
-    const t = limparTexto(r.pensamento, rej, 'pensamento');
+    const t = limparTexto(r.pensamento, rej, 'pensamento', lib);
     if (t) { d.pensamento = t; d.pensadoEm = hora; }
   } else {
     const r = resposta as RespostaReflexao;
-    const resumo = limparTexto(r.resumo, rej, 'resumo');
+    const resumo = limparTexto(r.resumo, rej, 'resumo', lib);
     if (resumo) { d.diario.push(`dia ${Math.floor(hora / 24) + 1}: ${resumo}`); d.diario = d.diario.slice(-10); d.pensamento = resumo; d.pensadoEm = hora; }
     const novas: string[] = [];
     for (const cr of r.crencas.slice(0, 2)) {
-      const texto = limparTexto(cr.enunciado, rej, 'crença');
+      const texto = limparTexto(cr.enunciado, rej, 'crença', lib);
       if (!texto) continue;
       const chave = `reflexao:${semAcento(texto).replace(/[^a-z ]/g, '').slice(0, 60)}`;
       const certeza = Math.min(0.8, Math.max(0.2, cr.certeza));

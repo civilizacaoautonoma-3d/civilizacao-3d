@@ -13,10 +13,16 @@ import { atualizarSentimentos, emocaoDominante, novaPersonalidade, novosSentimen
          type Emocao, type Personalidade, type Sentimentos } from './emocoes';
 import { NOME_NEUTRO, lugarDesejado, lugarEvitado, novoEstadoDeliberativo, pedirDeliberacao, pedirEvento, talvezPlanejar,
          vieses, type EstadoDeliberativo } from './deliberacao';
+import { TAREFAS, dormiuNaPilha, executarTarefa, novoEstadoTecnico, perceberObjetos, pilhaAbrigo, sabe, soltarTudo, temLasca,
+         utilidadesTecnicas, aprender, type EstadoTecnico, type Tarefa } from './tecnicas';
+import { fogosPerto } from './objetos';
+import { cavernaPreferida, conforto, dentroDeCaverna, dormiuNaCaverna, irParaCaverna, perceberCavernas, type CavernaConhecida } from './cavernas';
+import { CAVERNAS } from '../../shared/mundo';
 
 export type { Contexto } from './contexto';
 
-export type Objetivo = 'beber' | 'comer' | 'cacar' | 'fugir' | 'dormir' | 'descansar' | 'abrigar' | 'explorar' | 'aproximar';
+export type Objetivo = 'beber' | 'comer' | 'cacar' | 'fugir' | 'dormir' | 'descansar' | 'abrigar' | 'explorar' | 'aproximar'
+  | 'experimentar' | 'aquecer' | 'fazer_fogo' | 'lascar' | 'construir' | 'cavar' | 'melhorar_caverna';
 
 // lugares com recursos (o "mapa" de onde tem água e comida)
 export interface Lembranca {
@@ -60,6 +66,13 @@ export interface Agente {
   novidade: number;            // lugares novos vistos na última olhada (espanta o tédio)
   // Fase 9
   deliberacao: EstadoDeliberativo;
+  // Fase 10
+  tecnico: EstadoTecnico;
+  // cavernas que já viu; a de "casa" é onde dormiu mais vezes
+  cavernas: Record<number, CavernaConhecida>;
+  lar: number | null;
+  indoCaverna: number | null; indoCavernaDesde: number;
+  cavernaFalhou: Record<number, number>;   // não conseguiu entrar: tenta outra coisa até essa hora
 }
 
 const RAIO = 0.35;
@@ -92,17 +105,19 @@ export function completarAgente(a: Partial<Agente> & Pick<Agente, 'corpo'>): Age
   a.sentimentos ??= novosSentimentos();
   a.novidade ??= 0;
   a.deliberacao ??= novoEstadoDeliberativo();
+  a.tecnico ??= novoEstadoTecnico();
+  a.cavernas ??= {}; a.lar ??= null; a.indoCaverna ??= null; a.indoCavernaDesde ??= 0; a.cavernaFalhou ??= {};
   a.deliberacao.planoPedido ??= -1;
   return a as Agente;
 }
 
-const ev = (a: Agente, ctx: Contexto, texto: string) => ctx.evento(`${a.nome} ${texto}`);
+export const ev = (a: Agente, ctx: Contexto, texto: string) => ctx.evento(`${a.nome} ${texto}`);
 
 function hashTexto(t: string) { let h = 7; for (const c of t) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
 
-const sinta = (a: Agente, e: Emocao, intensidade: number) => sentir(a.sentimentos, a.personalidade, e, intensidade);
+export const sinta = (a: Agente, e: Emocao, intensidade: number) => sentir(a.sentimentos, a.personalidade, e, intensidade);
 
-function episodio(a: Agente, ctx: Contexto, oQue: TipoEpisodio, sobre: string, valencia: number, intensidade: number) {
+export function episodio(a: Agente, ctx: Contexto, oQue: TipoEpisodio, sobre: string, valencia: number, intensidade: number) {
   return registrarEpisodio(a.mente, {
     quando: ctx.hora, x: a.x, z: a.z, oQue, sobre, valencia, intensidade,
     contexto: { clima: ctx.clima, noite: ctx.noite, celula: celulaMapa(a.x, a.z) },
@@ -260,6 +275,9 @@ function perceber(a: Agente, ctx: Contexto) {
   }
   a.presaVista = presa ? (presa as Percebido).id : null;
 
+  perceberObjetos(a, ctx, alcance);
+  perceberCavernas(a, ctx, ve);
+
   const w = procurarAgua(a.x, a.z, alcance);
   if (w) lembrar(a, { tipo: 'agua', x: w.x, z: w.z, ref: -1, frutos: 0, quando: ctx.hora, forca: 1 }, ctx);
 }
@@ -333,7 +351,7 @@ function arvoreMaisProxima(a: Agente, raio: number): Arvore | null {
 const alvoAleatorio = (a: Agente, ctx: Contexto, min = 10, max = 40) => pontoAleatorio(a.x, a.z, ctx.rand, min, max);
 
 // explorar com curiosidade: prefere onde ainda não conhece, evita onde acredita ser perigoso
-function alvoDeExploracao(a: Agente, ctx: Contexto): Ponto | null {
+export function alvoDeExploracao(a: Agente, ctx: Contexto): Ponto | null {
   let melhor: Ponto | null = null, nota = -Infinity;
   for (let k = 0; k < 8; k++) {
     const p = pontoAleatorio(a.x, a.z, ctx.rand, 15, 50);
@@ -349,6 +367,14 @@ function alvoDeExploracao(a: Agente, ctx: Contexto): Ponto | null {
     if (n > nota) { nota = n; melhor = p; }
   }
   return melhor;
+}
+
+// anda até um ponto (usado pelas rotinas com objetos); true quando chegou
+export function irParaPonto(a: Agente, ctx: Contexto, p: Ponto, perto = 1.2): boolean {
+  if (Math.hypot(p.x - a.x, p.z - a.z) < perto) { a.destino = null; a.rota = null; return true; }
+  if (!a.destino || Math.hypot(a.destino.x - p.x, a.destino.z - p.z) > 1) definirDestino(a, ctx, { x: p.x, z: p.z });
+  if (irAte(a, ctx)) { a.destino = null; return Math.hypot(p.x - a.x, p.z - a.z) < perto + 0.8; }
+  return false;
 }
 
 function definirDestino(a: Agente, ctx: Contexto, d: Ponto | null) {
@@ -486,18 +512,26 @@ function decidir(a: Agente, ctx: Contexto) {
       * (1 - 0.6 * H.tristeza) * (1 - 0.4 * H.ansiedade) * (1 + 0.3 * E.alegria),
     // solidão: procurar companhia (mais forte nos sociáveis) — um impulso, não uma regra social
     aproximar: outro && distancia(a, outro) > 4 ? H.solidao * (0.3 + 0.7 * P.extroversao) * 0.8 : 0,
+    experimentar: 0, aquecer: 0, fazer_fogo: 0, lascar: 0, construir: 0, cavar: 0, melhorar_caverna: 0,
   };
+  // o que ele sabe fazer com as coisas (e a curiosidade de mexer nelas)
+  for (const [k, v] of Object.entries(utilidadesTecnicas(a, ctx, temComida)) as [Objetivo, number][]) notas[k] = v;
   // o que foi pensado (plano do dia, decisão num momento marcante) inclina as escolhas — o motor ainda decide
   for (const [k, v] of Object.entries(vieses(a, ctx.hora)) as [Objetivo, number][]) {
-    if ((k === 'fugir' || k === 'cacar' || k === 'aproximar') && notas[k] <= 0) continue;   // não dá para fugir do nada
+    if ((k === 'fugir' || k === 'cacar' || k === 'aproximar' || k === 'aquecer') && notas[k] <= 0) continue;   // não dá para fugir do nada
     notas[k] += v;
   }
   if (a.objetivo) notas[a.objetivo] += 0.05 + 0.1 * P.conscienciosidade;   // o cuidadoso persiste no que começou
+  // quem já está bebendo ou comendo termina; quem está a caminho de matar a fome ou a sede não troca por outra
+  // necessidade parecida a cada passo (senão, com as duas altas, vai e volta sem resolver nenhuma)
+  if (a.objetivo === 'beber' && a.acao === 'bebendo' && c.sede > 0.15) notas.beber += 1.5;
+  if (a.objetivo === 'comer' && a.acao === 'comendo') notas.comer += 1;
+  if ((a.objetivo === 'comer' || a.objetivo === 'beber') && a.destino) notas[a.objetivo] += 0.35;
   let escolha: Objetivo = 'explorar';
   for (const k of Object.keys(notas) as Objetivo[]) if (notas[k] > notas[escolha]) escolha = k;
   if (escolha !== a.objetivo) {
     a.objetivo = escolha;
-    a.destino = null; a.alvo = null; a.desvio = false; a.rota = null; a.alvoRef = -1; a.alvoCarne = -1; a.travado = 0;
+    a.destino = null; a.alvo = null; a.desvio = false; a.rota = null; a.alvoRef = -1; a.alvoCarne = -1; a.travado = 0; a.indoCaverna = null;
     if (escolha === 'cacar') {
       a.presa = a.presaVista; a.inicioCaca = ctx.hora;
       a.presaEspecie = vista && ehAnimal(vista) ? vista.especie : null;
@@ -540,12 +574,21 @@ function comerCarne(a: Agente, ctx: Contexto) {
     }
   }
   a.destino = null;
+  // com a pedra afiada, corta a carne depressa (e percebe isso)
+  const cortando = temLasca(a, ctx);
+  if (cortando && !sabe(a, 'cortar')) { ev(a, ctx, 'usou a pedra afiada para cortar a carne e viu que era muito mais fácil'); aprender(a, 'cortar', ctx, 'acaso'); }
+  // perto do fogo, a carne esquenta: não faz mal e sustenta mais
+  const cozida = fogosPerto(ctx.objetos, a.x, a.z, 3.5).length > 0;
   k.porcoes--;
-  c.fome = Math.max(0, c.fome - 0.3);
-  a.acao = 'comendo'; a.intencao = `comendo carne crua de ${PERFIS[k.especie].nome}`;
+  c.fome = Math.max(0, c.fome - (cozida ? 0.4 : 0.3));
+  a.acao = 'comendo';
+  a.intencao = `comendo carne ${cozida ? 'quente' : 'crua'} de ${PERFIS[k.especie].nome}${cortando ? ' (cortando com a pedra afiada)' : ''}`;
   a.rotacao = Math.atan2(k.x - a.x, k.z - a.z);
-  a.ocupadoAte = ctx.hora + 0.1;
-  if (estragada(k, ctx.hora)) {
+  a.ocupadoAte = ctx.hora + (cortando ? 0.05 : 0.1);
+  if (cozida) {
+    episodio(a, ctx, 'comeu', 'carne-quente', 0.5, 0.4); sinta(a, 'alegria', 0.3 + c.fome * 0.4);
+    if (++a.tecnico.cozidas >= 2 && !sabe(a, 'cozinhar')) { ev(a, ctx, 'percebeu que a carne comida perto do fogo não faz mal'); aprender(a, 'cozinhar', ctx, 'acaso'); }
+  } else if (estragada(k, ctx.hora)) {
     // paladar: gosto de podre, e depois a náusea — aprendizado de aversão
     c.saude = Math.max(0, c.saude - 0.06);
     c.dor = Math.min(1, c.dor + 0.2);
@@ -607,9 +650,9 @@ function executar(a: Agente, ctx: Contexto) {
         a.acao = 'atacando'; a.intencao = `tentando pegar um ${nome}`;
         a.rotacao = Math.atan2(alvo.x - a.x, alvo.z - a.z);
         a.ocupadoAte = ctx.hora + 0.02;
-        const acerto = alvo.especie === 'coelho' ? 0.45 : alvo.especie === 'peixe' ? 0.25 : 0.3;   // peixe escorrega da mão
+        const acerto = (alvo.especie === 'coelho' ? 0.45 : alvo.especie === 'peixe' ? 0.25 : 0.3) + (temLasca(a, ctx) ? 0.15 : 0);   // peixe escorrega; a pedra afiada ajuda
         if (ctx.rand() < acerto) {
-          const dano = alvo.especie === 'coelho' || alvo.especie === 'peixe' ? 1 : 0.25 * (1.5 - maturidade(alvo, ctx.hora));
+          const dano = alvo.especie === 'coelho' || alvo.especie === 'peixe' ? 1 : 0.25 * (1.5 - maturidade(alvo, ctx.hora)) * (temLasca(a, ctx) ? 1.6 : 1);
           const k = ferirAnimal(alvo, dano, { id: a.id, x: a.x, z: a.z, tipo: 'humano', nome: a.nome }, ctx);
           if (k) {
             fim(alvo.especie === 'peixe' ? 'pegou um peixe com as mãos' : `caçou um ${nome}`);
@@ -637,10 +680,23 @@ function executar(a: Agente, ctx: Contexto) {
         return;
       }
       if (!a.destino) {
+        // o lugar do plano só vale se ainda não se mostrou inútil
+        let planejada = lugarDesejado(a, 'beber', ctx.hora);
+        if (planejada && (a.inalcancavel[chaveAgua(planejada.x, planejada.z)] ?? -1) > ctx.hora) planejada = null;
+        // chegou onde lembrava haver água e não há: a lembrança estava errada
+        if (planejada && Math.hypot(planejada.x - a.x, planejada.z - a.z) < 2.5) {
+          enfraquecerLembranca(a, planejada.x, planejada.z);
+          a.inalcancavel[chaveAgua(planejada.x, planejada.z)] = ctx.hora + 12;
+          planejada = null;
+        }
         const m = aguaMaisProxima(a, ctx);
-        const planejada = lugarDesejado(a, 'beber', ctx.hora);
-        definirDestino(a, ctx, planejada ?? (m ? { x: m.x, z: m.z } : alvoDeExploracao(a, ctx)));
-        a.intencao = m ? 'indo beber água' : 'procurando água';
+        if (m && Math.hypot(m.x - a.x, m.z - a.z) < 2.5) {
+          enfraquecerLembranca(a, m.x, m.z);
+          a.inalcancavel[chaveAgua(m.x, m.z)] = ctx.hora + 12;
+        }
+        const m2 = m && Math.hypot(m.x - a.x, m.z - a.z) < 2.5 ? aguaMaisProxima(a, ctx) : m;
+        definirDestino(a, ctx, planejada ?? (m2 ? { x: m2.x, z: m2.z } : alvoDeExploracao(a, ctx)));
+        a.intencao = m2 || planejada ? 'indo beber água' : 'procurando água';
         if (!a.destino) { a.acao = 'parado'; return; }
       }
       const d = a.destino;
@@ -707,7 +763,24 @@ function executar(a: Agente, ctx: Contexto) {
     }
 
     case 'dormir': {
+      // uma caverna conhecida (a de casa, mesmo longe) é o melhor lugar para passar a noite
+      if (a.indoCaverna === null && a.acao !== 'dormindo' && !dentroDeCaverna(a)) {
+        const cav = cavernaPreferida(a, ctx, 'dormir');
+        if (cav) { a.indoCaverna = cav.id; a.indoCavernaDesde = ctx.hora; a.destino = null; a.rota = null; }
+      }
+      if (a.indoCaverna !== null) {
+        const cav = CAVERNAS[a.indoCaverna];
+        if (!irParaCaverna(a, ctx, cav)) {
+          a.intencao = a.lar === cav.id ? 'voltando para a sua caverna para dormir' : 'indo dormir na caverna';
+          // cansou de tentar entrar (ou o sono venceu): dorme onde está e deixa essa caverna de lado por um tempo
+          if (ctx.hora - a.indoCavernaDesde > 2.5 || a.corpo.sono > 0.97) { a.cavernaFalhou[cav.id] = ctx.hora + 24; a.indoCaverna = null; a.destino = null; }
+          else return;
+        } else { a.indoCaverna = null; a.abrigado = true; a.destino = null; }
+      }
       if (!a.destino && !a.abrigado && a.intencao !== 'procurando um lugar para dormir') {
+        // quem sabe que a pilha abriga, dorme junto dela
+        const pilha = sabe(a, 'abrigo-pilha') ? ctx.objetos.find(o => o.tipo === 'pilha' && (o.qtd ?? 0) >= 8 && Math.hypot(o.x - a.x, o.z - a.z) < 30) : undefined;
+        if (pilha) { definirDestino(a, ctx, { x: pilha.x + 0.9, z: pilha.z }); a.intencao = 'procurando um lugar para dormir'; return; }
         const t = arvoreMaisProxima(a, 12);
         if (t) {
           definirDestino(a, ctx, { x: t.x + t.r + 0.6, z: t.z });
@@ -718,8 +791,12 @@ function executar(a: Agente, ctx: Contexto) {
       if (a.destino && !irAte(a, ctx)) return;
       a.destino = null;
       a.acao = 'dormindo'; a.intencao = 'dormindo';
-      a.abrigado = arvoreMaisProxima(a, 2.2) !== null;
-      ev(a, ctx, a.abrigado ? 'foi dormir sob uma árvore' : 'foi dormir');
+      soltarTudo(a, ctx);   // para dormir, larga o que segurava ali mesmo
+      a.abrigado = arvoreMaisProxima(a, 2.2) !== null || pilhaAbrigo(a, ctx) || dentroDeCaverna(a);
+      ev(a, ctx, dentroDeCaverna(a) ? 'foi dormir na caverna' : pilhaAbrigo(a, ctx) ? 'foi dormir junto da pilha de gravetos'
+        : a.abrigado ? 'foi dormir sob uma árvore' : 'foi dormir');
+      dormiuNaPilha(a, ctx);
+      dormiuNaCaverna(a, ctx);
       // no sono, a mente junta as lembranças e tira conclusões (algumas erradas)
       if (ctx.hora - a.refletiuEm > 12) {
         // quem é ansioso liga mais coincidências; quem é aberto questiona mais
@@ -730,6 +807,10 @@ function executar(a: Agente, ctx: Contexto) {
       }
       return;
     }
+
+    case 'experimentar': case 'aquecer': case 'fazer_fogo': case 'lascar': case 'construir': case 'cavar': case 'melhorar_caverna':
+      executarTarefa(a, ctx, a.objetivo as Tarefa);
+      return;
 
     case 'descansar':
       a.acao = 'parado'; a.intencao = 'descansando';
@@ -744,12 +825,21 @@ function executar(a: Agente, ctx: Contexto) {
         return;
       }
       if (!a.destino) {
+        // uma caverna conhecida por perto protege melhor que uma árvore
+        const cav = a.indoCaverna !== null ? CAVERNAS[a.indoCaverna] : cavernaPreferida(a, ctx, 'abrigar');
+        if (cav) {
+          if (a.indoCaverna === null) { a.indoCaverna = cav.id; a.indoCavernaDesde = ctx.hora; }
+          if (irParaCaverna(a, ctx, cav)) { a.indoCaverna = null; a.abrigado = true; }
+          else if (ctx.hora - a.indoCavernaDesde > 2) { a.cavernaFalhou[cav.id] = ctx.hora + 24; a.indoCaverna = null; }
+          else a.intencao = 'indo se abrigar na caverna';
+          return;
+        }
         const t = arvoreMaisProxima(a, 30);
         definirDestino(a, ctx, t ? { x: t.x + t.r + 0.6, z: t.z } : alvoAleatorio(a, ctx));
         a.intencao = 'procurando abrigo';
         if (!a.destino) { a.acao = 'parado'; return; }
       }
-      if (irAte(a, ctx)) { a.destino = null; a.abrigado = arvoreMaisProxima(a, 2.2) !== null; }
+      if (irAte(a, ctx)) { a.destino = null; a.abrigado = arvoreMaisProxima(a, 2.2) !== null || dentroDeCaverna(a); }
       return;
     }
 
@@ -797,6 +887,8 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
   atualizarCorpo(a.corpo, ctx.horas, a.acao, {
     temperatura: ctx.temperatura, chuva: ctx.chuva, vento: ctx.vento,
     noite: ctx.noite, abrigado: a.abrigado, acompanhado: a.acompanhado,
+    fogo: fogosPerto(ctx.objetos, a.x, a.z, 4).length > 0,
+    ...conforto(a.x, a.z, ctx.objetos),
   });
 
   for (const m of a.memoria) m.forca -= ctx.horas / 120;   // sem rever, esquece um lugar em ~5 dias
@@ -813,6 +905,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
 
   if (a.corpo.saude <= 0) {
     a.vivo = false; a.acao = 'morto';
+    soltarTudo(a, ctx);
     a.causaMorte = causaDaMorte(a.corpo);
     a.intencao = `morreu de ${a.causaMorte}`;
     ev(a, ctx, `morreu de ${a.causaMorte}`);
@@ -861,7 +954,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
     a.proximaDecisao = 10;
     talvezPlanejar(a, ctx);
     perceber(a, ctx);
-    a.abrigado = arvoreMaisProxima(a, 2.2) !== null;
+    a.abrigado = arvoreMaisProxima(a, 2.2) !== null || pilhaAbrigo(a, ctx) || dentroDeCaverna(a);
     a.acompanhado = ctx.agentes.some(o => o !== a && o.vivo && Math.hypot(o.x - a.x, o.z - a.z) < 1.5);
     decidir(a, ctx);
   }

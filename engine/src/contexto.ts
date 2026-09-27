@@ -3,6 +3,7 @@ import type { Estacao } from '../../shared/clima';
 import type { Agente } from './agente';
 import type { Animal } from './animal';
 import type { Carcaca, Marca } from './ecologia';
+import type { Objeto } from './objetos';
 
 export type Ser = Agente | Animal;
 export const ehAnimal = (s: Ser): s is Animal => 'especie' in s;
@@ -27,4 +28,9 @@ export interface Contexto {
   novoId: (prefixo: string) => string;
   novaCarcaca: (c: Omit<Carcaca, 'id'>) => Carcaca;
   nascer: (a: Animal) => void;
+  // Fase 10: coisas do mundo que podem ser pegas, largadas, transformadas
+  objetos: Objeto[];
+  criarObjeto: (o: Omit<Objeto, 'id'>) => Objeto;
+  objetosMudaram: () => void;
+  descoberta: (tecnica: string, descricao: string, quem: Agente, como: 'acaso' | 'imitação', de: Agente | null) => void;
 }

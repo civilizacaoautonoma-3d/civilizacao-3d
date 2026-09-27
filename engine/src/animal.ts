@@ -2,7 +2,8 @@
 // Documentação, seção 17: corpo, percepção por espécie, estados emocionais,
 // instintos (fugir, perseguir, caçar, seguir o grupo, proteger filhotes, marcar território, migrar),
 // habituação e sensibilização.
-import { ARBUSTOS, ARVORES, WATER_LEVEL, heightAt, obstaculosPerto, resolverColisao } from '../../shared/mundo';
+import { ARBUSTOS, ARVORES, WATER_LEVEL, cavernaEm, heightAt, obstaculosPerto, resolverColisao } from '../../shared/mundo';
+import { bocaFechada } from './cavernas';
 import { PERFIS, type Especie, type EmocaoAnimal, type PerfilEspecie } from '../../shared/especies';
 import type { Acao } from '../../shared/protocolo';
 import { ehAnimal, type Contexto, type Ser } from './contexto';
@@ -186,7 +187,7 @@ function perceber(an: Animal, ctx: Contexto) {
     }
     // um lobo faminto, com a matilha junto, pode atacar um humano dormindo ou ferido
     if (carnivoro && mat >= 0.5 && c.fome > 0.8 && meusPerto >= 2 && base < 0.5 &&
-        (ag.acao === 'dormindo' || ag.corpo.saude < 0.4)) {
+        (ag.acao === 'dormindo' || ag.corpo.saude < 0.4) && !protegidoNaCaverna(ag, ctx)) {
       const nota = 0.7 / (1 + d / 12);
       if (nota > notaPresa) { notaPresa = nota; presa = ag; }
     }
@@ -298,6 +299,15 @@ function perceber(an: Animal, ctx: Contexto) {
     const s = ctx.porId.get(an.ameaca.id);
     if (s && s.vivo && Math.hypot(s.x - an.x, s.z - an.z) < visao) { an.ameaca.x = s.x; an.ameaca.z = s.z; }
     else an.ameaca.direta = false;
+  }
+  // bicho de terra tem medo do fogo (pássaro voa por cima, peixe está na água)
+  if (!p.aquatico && an.especie !== 'ave' && !an.ameaca?.direta) {
+    const f = ctx.objetos.find(o => o.tipo === 'fogo' && Math.hypot(o.x - an.x, o.z - an.z) < 9);
+    if (f) {
+      an.ameaca = { id: `fogo_${f.id}`, x: f.x, z: f.z, tipo: 'fogo', direta: false };
+      e.medo = Math.max(e.medo ?? 0, 0.7);
+      e.alerta = Math.max(e.alerta ?? 0, 0.8);
+    }
   }
   an.presaVista = presa ? (presa as Ser).id : null;
   // mapa mental: onde já encontrou caça
@@ -618,7 +628,12 @@ const marcaAlheiaPerto = (an: Animal, ctx: Contexto, x: number, z: number) =>
 
 const cacadasConhecidas = (an: Animal) => an.lugares.some(l => l.tipo === 'comida');
 
-const NOMES_AMEACA: Record<string, string> = { humano: 'um humano', lobo: 'um lobo', javali: 'um javali', cervo: 'um cervo', coelho: 'um coelho' };
+const NOMES_AMEACA: Record<string, string> = { humano: 'um humano', lobo: 'um lobo', javali: 'um javali', cervo: 'um cervo', coelho: 'um coelho', fogo: 'o fogo' };
+// dentro de uma caverna com a boca tapada de gravetos, o bicho não chega
+function protegidoNaCaverna(s: { x: number; z: number }, ctx: Contexto) {
+  const c = cavernaEm(s.x, s.z);
+  return !!c && bocaFechada(c, ctx.objetos);
+}
 const nomeDaAmeaca = (t: string) => NOMES_AMEACA[t] ?? `um ${t}`;
 
 // encurralado, defendendo os filhotes ou machão: o javali enfrenta

@@ -39,6 +39,9 @@ export function descreverSituacao(s: Situacao) {
     lista('O que você acredita', s.crencas),
     lista('Lembranças que marcaram', s.lembrancas),
     lista('Seus últimos dias', s.diario),
+    lista('O que você já descobriu fazer', s.sabe ?? []),
+    s.carrega?.length ? `Nas mãos: ${s.carrega.join(' e ')}.` : '',
+    lista('Coisas soltas por perto', s.coisas ?? []),
     `Ações possíveis agora: ${s.acoesPossiveis.join(', ')}.`,
     '',
     PEDIDO[s.tipo],
@@ -86,8 +89,12 @@ export const provedorTeste: Provedor = {
       if (tem('fome')) prioridades.push({ acao: 'comer', lugar: lugar('comida'), peso: tem('muita fome') ? 3 : 2 });
       if (tem('sede')) prioridades.push({ acao: 'beber', lugar: lugar('agua'), peso: tem('muita sede') ? 3 : 2 });
       if (s.humor.includes('sozinho') && s.acoesPossiveis.includes('aproximar')) prioridades.push({ acao: 'aproximar', lugar: null, peso: 2 });
+      if (tem('frio') && s.acoesPossiveis.includes('aquecer')) prioridades.push({ acao: 'aquecer', lugar: null, peso: 2 });
+      if (s.humor.includes('entediado') && s.acoesPossiveis.includes('experimentar') && (s.coisas ?? []).length)
+        prioridades.push({ acao: 'experimentar', lugar: null, peso: 1 });
       if (s.humor.includes('entediado') || !prioridades.length) prioridades.push({ acao: 'explorar', lugar: null, peso: 1 });
-      const palavras: Record<string, string> = { comer: 'comer', beber: 'beber água', aproximar: 'ficar perto da outra pessoa', explorar: 'andar e ver lugares novos' };
+      const palavras: Record<string, string> = { comer: 'comer', beber: 'beber água', aproximar: 'ficar perto da outra pessoa', explorar: 'andar e ver lugares novos',
+        aquecer: 'ficar perto da luz quente', experimentar: 'mexer nas coisas que acho pelo chão' };
       return {
         pensamento: `${s.corpo.length ? `Sinto ${s.corpo.join(' e ')}.` : 'Acordei bem.'}${s.sente ? ` Sinto ${s.sente}.` : ''} Hoje quero ${prioridades.map(p => palavras[p.acao] ?? p.acao).join(', depois ')}.`,
         prioridades, evitar: [],

@@ -11,7 +11,7 @@ Mundo 3D persistente em que agentes autônomos vivem, sobrevivem e formam uma ci
 ## Estrutura
 ```
 shared/   código usado pelo motor e pelo visualizador (sem dependências)
-  mundo.ts      geração determinística por SEED: relevo, árvores, pedras, arbustos, colisão
+  mundo.ts      geração determinística por SEED: relevo, árvores, pedras, arbustos, 4 cavernas, colisão
   clima.ts      relógio do mundo, estações, sol/lua, clima (não usa Three.js)
   especies.ts   perfis das espécies (coelho, cervo, lobo, javali, pássaro, peixe): sentidos, instintos, clima, ciclo de vida
   protocolo.ts  mensagens WebSocket servidor <-> navegador
@@ -25,6 +25,9 @@ engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 80
   src/deliberacao.ts IA deliberativa: situação neutra, contrato JSON, fila, orçamento, validação, filtro de anacronismo
   src/provedores.ts  quem pensa: Claude (SDK oficial, saída estruturada com zod) ou deliberador de teste local
   data/mente.jsonl   cada deliberação: situação, resposta, o que foi aplicado/rejeitado, consequência
+  src/objetos.ts   objetos do mundo (pedra, graveto, fibra, lasca, pilha, fogo) e as regras materiais escondidas
+  src/cavernas.ts  cavernas: perceber, entrar pela boca, dormir, virar "casa" por repetição
+  src/tecnicas.ts  gestos primitivos, experimentação, técnicas descobertas, imitação (Fase 10)
   src/corpo.ts     fisiologia humana: fome, sede, sono, energia, frio, dor, saúde, morte
   src/animal.ts    animais (sem LLM): corpo, emoções da espécie, memória associativa, fuga, caça, reprodução
   src/ecologia.ts  pasto e raízes em grade de 10 m, frutos (crescem e apodrecem), carcaças, marcas de cheiro dos lobos
@@ -36,7 +39,9 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   src/main.ts    cena, céu, clima visual, jogador observador, conexão
   src/agentes.ts malhas e poses dos agentes
   src/animais.ts modelos provisórios dos animais e carcaças, animação de patas e poses
-  src/painel.ts  painel do agente ou animal na mira (necessidades e emoções)
+  src/painel.ts  painel do agente ou animal na mira (necessidades, emoções, o que sabe e carrega)
+  src/cavernas.ts domo de rocha das cavernas (posição vem de shared/mundo)
+  src/objetos.ts pedras, gravetos, fibras, lascas, pilhas e fogo (chama, luz, fumaça); itens nas mãos
   src/arbustos.ts arbustos e frutos
 ```
 
@@ -75,6 +80,26 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   textos. Ontologia neutra: o prompt só tem o que o agente sente, lembra, acredita e percebe, com bichos descritos
   pela aparência. O que foi pensado inclina a utilidade (plano +0,08×peso, decisão +0,6 por 1 h); reflexos e
   necessidades urgentes continuam mandando. Sem LLM (sem chave, orçamento esgotado, erro), segue por utilidade.
+- Fase 10: objetos soltos no mundo (gravetos perto das árvores, pedras perto das rochas, fibras perto dos arbustos;
+  galhos e capim repõem, pedras não). Até 2 coisas nas mãos. Gestos primitivos: pegar, largar, bater, esfregar,
+  empilhar, amarrar, cavar, encostar no fogo. O motor aplica regras materiais que o agente não conhece (`REGRAS` em
+  objetos.ts): pedra batida em pedra/rocha às vezes lasca; esfregar gravetos ~1,1 h sem chuva perto de uma pilha
+  faz fogo (fumaça antes); raio em tempestade incendeia árvore; fogo queima gravetos e apaga na chuva; graveto
+  encostado no fogo vira tição; pilha de 8+ gravetos abriga; fibras prendem a pilha; cavar acha raízes. Descobrir
+  é por curiosidade/tédio (a vontade de mexer cansa no dia; gestos pouco tentados atraem). Quem descobre sabe
+  repetir (técnica); quem vê pode aprender imitando (chance pela abertura). Técnicas liberam tarefas (aquecer,
+  fazer_fogo, lascar, construir, cavar) e palavras no filtro de anacronismo (quem conhece o fogo pode dizer "fogo").
+  Efeitos: pedra afiada corta carne e ajuda a caçar; carne perto do fogo não faz mal; fogo aquece (+9 °C) e
+  espanta bichos de terra. Registro histórico em `descobertas` (quem, quando, como, para quem passou).
+- Cavernas: 4 em encostas (gerador próprio, SEED+2000; uma a ~50-90 m do início), paredes com colisão e boca virada
+  para baixo do morro. Dentro: abrigado (sem chuva e vento) e +4 °C. O agente só usa as que já viu (marco que não se
+  esquece). "Casa" emerge: depois de 3 noites numa caverna ela vira o `lar`, e ele volta para ela de mais longe
+  (alcance cresce com as noites). O LLM recebe as cavernas conhecidas como lugares (sem a palavra "casa").
+  Aperfeiçoar a caverna (descoberto, não programado): ao deitar o agente larga o que segura, então coisas vão parar
+  na caverna. 3+ fibras onde dorme = cama de capim (+3 °C dormindo, sono mais fundo) -> técnica `cama-capim`;
+  pilha de 5+ gravetos na boca = boca tapada (+3 °C e lobo não ataca quem dorme lá) -> técnica `fechar-boca`.
+  Quem sabe ganha a tarefa `melhorar_caverna` (leva capim para dentro, empilha gravetos na boca). Dentro da
+  caverna a chuva não apaga o fogo. O que está dentro de uma caverna só é mexido por quem está lá dentro (guardado).
 - Ações primitivas; comportamentos sociais devem emergir, nunca ser programados como comandos prontos.
 - Estado atual: 2 agentes provisórios (Aru e Nia), personagens são cápsulas até a Fase 4 (Blender).
 - Animais (Fase 6): coelhos (colônias, se escondem em arbustos, dormem na toca), cervos (manadas que migram atrás
@@ -97,9 +122,11 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 
 ## Fases
 Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência), 6 (natureza, ecologia e animais),
-7 (percepção, memória e aprendizado), 8 (emoções e personalidade), 9 (IA deliberativa) — todas validadas com os dois
+7 (percepção, memória e aprendizado), 8 (emoções e personalidade), 9 (IA deliberativa), 10 (ações primitivas, descoberta,
+construção e cavernas) — todas validadas com os dois
 agentes vivos o ano todo. A Fase 9 foi validada com o deliberador de teste; com o Claude de verdade ainda não (precisa de chave).
-Próximas sugeridas: 10 (ações primitivas, descoberta e construção), 11 (relações e protolinguagem), 4 (Blender, em paralelo).
+Próximas sugeridas: 11 (relações e protolinguagem), 4 (Blender, em paralelo).
+Fase 10 ainda não viu: fogo por atrito, levar fogo, boca de caverna tapada (existem nas regras; raros por acaso).
 Pendências: cervos caem de ~24 para ~8 ao longo do ano (migrantes seguram abaixo de 8); javalis ainda investem
 contra humanos ~35 vezes por ano (quase sempre avisos, sem mortes); biomas.
 
@@ -109,4 +136,4 @@ contra humanos ~35 vezes por ano (quase sempre avisos, sem mortes); biomas.
 - `engine/data/` não é versionado (é o mundo do usuário).
 
 ## Como validar mudanças no motor
-Rodar `cd engine; npm run validar -- 60` (`--rastrear Nome --desde Dia` mostra um agente a cada meia hora) (dias do mundo; ~4 s por dia com as seis espécies) e verificar se os agentes sobrevivem, se têm um ritmo diário plausível e se as populações de animais não explodem nem somem, antes de entregar. O script cria um mundo novo em memória e não toca em `data/`.
+Rodar `cd engine; npm run validar -- 60` (`--rastrear Nome --desde Dia` mostra um agente a cada meia hora) (dias do mundo; ~4 s por dia com as seis espécies) e verificar se os agentes sobrevivem, se têm um ritmo diário plausível e se as populações de animais não explodem nem somem, antes de entregar. O script cria um mundo novo em memória e não toca em `data/`. Para o ano inteiro, rode em blocos (a máquina fica sem memória numa rodada só): `npm run validar -- 60 --salvar b1.json`, depois `npm run validar -- 120 --carregar b1.json --salvar b2.json` e assim por diante.

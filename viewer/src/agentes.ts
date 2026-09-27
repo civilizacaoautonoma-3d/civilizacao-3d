@@ -97,7 +97,8 @@ export function animarAgentes(dt: number) {
 
     // postura: ação + emoção (medo encolhe e treme, raiva avança, tristeza curva, alegria saltita)
     let inclinacao = deitado ? -Math.PI / 2 : acao === 'comendo' || acao === 'bebendo' ? 0.5
-      : acao === 'correndo' ? 0.25 : acao === 'atacando' ? 0.45 : 0;
+      : acao === 'correndo' ? 0.25 : acao === 'atacando' ? 0.45
+      : acao === 'fucando' ? 0.75 + Math.sin(agora * 6) * 0.12 : 0;   // cavando: curvado, mexendo o chão
     let cabecaX = 0, cabecaY = 0, altura = 1;
     if (emocao === 'medo') { inclinacao -= 0.12 * forca; altura = 1 - 0.08 * forca; }
     else if (emocao === 'raiva') inclinacao += 0.15 * forca;
