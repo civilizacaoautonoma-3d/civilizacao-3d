@@ -306,6 +306,15 @@ function experimentar(a: Agente, ctx: Contexto) {
   if (tem('graveto')) {
     opcoes.push(['esfregar-graveto', () => { const r = esfregar(a, ctx); if (r !== 'impossivel') { t.gesto = 'esfregar'; t.gestoDesde = ctx.hora; return true; } return buscarSegundoGraveto(a, ctx); }]);
     opcoes.push(['empilhar', () => empilhar(a, ctx)]);
+    // perto de uma caverna que conhece: experimenta largar o graveto na boca dela (o mesmo gesto, num lugar novo)
+    const cav = Object.keys(a.cavernas ?? {}).map(id => CAVERNAS[Number(id)]).find(c => Math.hypot(c.x - a.x, c.z - a.z) < 25);
+    if (cav) opcoes.push(['empilhar-boca', () => {
+      const b = bocaDa(cav);
+      if (!irParaPonto(a, ctx, b, 1.2)) { a.intencao = 'levando um graveto até a boca da caverna'; return true; }
+      const feito = empilhar(a, ctx, b);
+      if (feito) { t.tentou['empilhar-boca'] = (t.tentou['empilhar-boca'] ?? 0) + 1; a.intencao = 'largou o graveto na boca da caverna'; }
+      return feito;
+    }]);
     if (maisPerto(a, ctx, o => o.tipo === 'fogo', 12)) {
       opcoes.push(['alimentar-fogo', () => usarFogo(a, ctx, true) || irAteFogo(a, ctx)]);
       opcoes.push(['encostar-no-fogo', () => usarFogo(a, ctx, false) || irAteFogo(a, ctx)]);
