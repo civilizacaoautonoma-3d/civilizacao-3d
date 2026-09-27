@@ -18,6 +18,7 @@ import { TAREFAS, dormiuNaPilha, executarTarefa, novoEstadoTecnico, perceberObje
 import { fogosPerto } from './objetos';
 import { cavernaPreferida, conforto, dentroDeCaverna, dormiuNaCaverna, irParaCaverna, perceberCavernas, type CavernaConhecida } from './cavernas';
 import { CAVERNAS } from '../../shared/mundo';
+import { mudarRelacao, novoEstadoSocial, pulsoSocial, vontadeDeFicarPerto, type EstadoSocial } from './social';
 
 export type { Contexto } from './contexto';
 
@@ -73,6 +74,8 @@ export interface Agente {
   lar: number | null;
   indoCaverna: number | null; indoCavernaDesde: number;
   cavernaFalhou: Record<number, number>;   // não conseguiu entrar: tenta outra coisa até essa hora
+  // Fase 11: relações e protolinguagem
+  social: EstadoSocial;
 }
 
 const RAIO = 0.35;
@@ -106,6 +109,7 @@ export function completarAgente(a: Partial<Agente> & Pick<Agente, 'corpo'>): Age
   a.novidade ??= 0;
   a.deliberacao ??= novoEstadoDeliberativo();
   a.tecnico ??= novoEstadoTecnico();
+  a.social ??= novoEstadoSocial();
   a.cavernas ??= {}; a.lar ??= null; a.indoCaverna ??= null; a.indoCavernaDesde ??= 0; a.cavernaFalhou ??= {};
   a.deliberacao.planoPedido ??= -1;
   return a as Agente;
@@ -125,7 +129,7 @@ export function episodio(a: Agente, ctx: Contexto, oQue: TipoEpisodio, sobre: st
 }
 
 // ---------- Memória de lugares ----------
-function lembrar(a: Agente, l: Lembranca, ctx: Contexto) {
+export function lembrar(a: Agente, l: Lembranca, ctx: Contexto) {
   const igual = a.memoria.find(m => m.tipo === l.tipo &&
     (l.tipo === 'agua' ? Math.hypot(m.x - l.x, m.z - l.z) < 15 : m.ref === l.ref));
   if (igual) { igual.frutos = l.frutos; igual.quando = l.quando; igual.forca = 1; return; }
@@ -511,7 +515,9 @@ function decidir(a: Agente, ctx: Contexto) {
     explorar: (0.2 + ctx.rand() * 0.1) * (1 - receio * 0.7) * (0.6 + 0.8 * P.abertura) * (1 + H.tedio)
       * (1 - 0.6 * H.tristeza) * (1 - 0.4 * H.ansiedade) * (1 + 0.3 * E.alegria),
     // solidão: procurar companhia (mais forte nos sociáveis) — um impulso, não uma regra social
-    aproximar: outro && distancia(a, outro) > 4 ? H.solidao * (0.3 + 0.7 * P.extroversao) * 0.8 : 0,
+    // o laço pesa: de quem gosta, sente mais falta; de quem guarda mágoa ou medo, menos; ser chamado puxa
+    aproximar: outro && distancia(a, outro) > 4
+      ? (() => { const v = vontadeDeFicarPerto(a, outro, ctx.hora); return H.solidao * (0.3 + 0.7 * P.extroversao) * 0.8 * v.fator + v.chamado; })() : 0,
     experimentar: 0, aquecer: 0, fazer_fogo: 0, lascar: 0, construir: 0, cavar: 0, melhorar_caverna: 0,
   };
   // o que ele sabe fazer com as coisas (e a curiosidade de mexer nelas)
@@ -754,6 +760,8 @@ function executar(a: Agente, ctx: Contexto) {
           episodio(a, ctx, 'decepcao', `arbusto:${a.alvoRef}`, -0.3, 0.35);
           sinta(a, 'tristeza', 0.25); sinta(a, 'surpresa', 0.3); viver(a.sentimentos, 'decepção', ctx.hora, 1);
           if (ctx.hora - a.ultimaDecepcao > 12) ev(a, ctx, 'ficou decepcionado: o arbusto estava vazio');
+          const comeuAntes = ctx.agentes.find(o => o !== a && o.vivo && o.alvoRef === a.alvoRef && Math.hypot(o.x - a.x, o.z - a.z) < 8);
+          if (comeuAntes) mudarRelacao(a, comeuAntes, { ressentimento: 0.12, afeto: -0.03 });
           a.ultimaDecepcao = ctx.hora;
         }
         if (mem) { mem.frutos = 0; mem.quando = ctx.hora; }
@@ -930,6 +938,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
     // dormindo, só ouve um bicho que chega muito perto
     if (--a.proximaDecisao <= 0) {
       a.proximaDecisao = 10;
+      pulsoSocial(a, ctx, 10 * ctx.horas);
       for (const o of ctx.animais) {
         if (!o.vivo || Math.hypot(o.x - a.x, o.z - a.z) > 6 || ctx.rand() > 0.5) continue;
         if (medoDaEspecie(a, o.especie, ctx) < 0.4 || o.acao === 'parado' || o.acao === 'dormindo') continue;
@@ -956,6 +965,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
     perceber(a, ctx);
     a.abrigado = arvoreMaisProxima(a, 2.2) !== null || pilhaAbrigo(a, ctx) || dentroDeCaverna(a);
     a.acompanhado = ctx.agentes.some(o => o !== a && o.vivo && Math.hypot(o.x - a.x, o.z - a.z) < 1.5);
+    pulsoSocial(a, ctx, 10 * ctx.horas);
     decidir(a, ctx);
   }
 

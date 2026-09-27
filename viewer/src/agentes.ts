@@ -3,7 +3,7 @@ import type { EntidadeRede } from '../../shared/protocolo';
 
 export interface AgenteVisual {
   grupo: THREE.Group; pose: THREE.Group; corpo: THREE.Mesh; cabeca: THREE.Group; pele: THREE.MeshStandardMaterial;
-  corPele: THREE.Color; balao: THREE.Sprite; simbolo: string;
+  corPele: THREE.Color; balao: THREE.Sprite; simbolo: string; fala: THREE.Sprite; textoFala: string;
   alvo: THREE.Vector3; dados: EntidadeRede; fase: number;
 }
 
@@ -33,6 +33,22 @@ function texturaDe(simbolo: string) {
   return t;
 }
 
+// balão com o som dito (grande) e a tradução para quem observa (pequena)
+function texturaFala(texto: string, traducao: string) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgba(255,255,255,0.88)';
+  g.beginPath(); g.roundRect(4, 4, 504, 104, 24); g.fill();
+  g.beginPath(); g.moveTo(236, 106); g.lineTo(256, 126); g.lineTo(276, 106); g.fill();
+  g.textAlign = 'center'; g.fillStyle = '#222';
+  g.font = 'bold 44px sans-serif'; g.fillText(`"${texto}"`, 256, 56);
+  g.font = '26px sans-serif'; g.fillStyle = '#666'; g.fillText(traducao, 256, 92);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 function criarAgente(e: EntidadeRede): AgenteVisual {
   const corPele = new THREE.Color(e.sexo === 'M' ? 0xb07850 : 0xd09a74);
   const pele = new THREE.MeshStandardMaterial({ color: corPele.clone() });
@@ -52,13 +68,15 @@ function criarAgente(e: EntidadeRede): AgenteVisual {
   pose.add(corpo, cabeca);
   const balao = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
   balao.position.y = 2.25; balao.scale.setScalar(0.45); balao.visible = false;
+  const fala = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+  fala.position.y = 2.75; fala.scale.set(2.4, 0.6, 1); fala.visible = false;
   const grupo = new THREE.Group();         // posição e direção
-  grupo.add(pose, balao);
+  grupo.add(pose, balao, fala);
   grupo.position.set(e.x, e.y, e.z);
   grupo.rotation.y = e.rotacao;
   cena?.add(grupo);
 
-  const v: AgenteVisual = { grupo, pose, corpo, cabeca, pele, corPele, balao, simbolo: '',
+  const v: AgenteVisual = { grupo, pose, corpo, cabeca, pele, corPele, balao, simbolo: '', fala, textoFala: '',
     alvo: new THREE.Vector3(e.x, e.y, e.z), dados: e, fase: 0 };
   agentes.set(e.id, v);
   return v;
@@ -71,6 +89,15 @@ export function aplicarEntidades(lista: EntidadeRede[]) {
     const v = agentes.get(e.id) ?? criarAgente(e);
     v.alvo.set(e.x, e.y, e.z);
     v.dados = e;
+    const texto = e.fala ? `${e.fala.texto}|${e.fala.traducao}` : '';
+    if (texto !== v.textoFala) {
+      v.textoFala = texto;
+      const m = v.fala.material as THREE.SpriteMaterial;
+      m.map?.dispose();
+      m.map = e.fala ? texturaFala(e.fala.texto, e.fala.traducao) : null;
+      m.needsUpdate = true;
+      v.fala.visible = !!e.fala;
+    }
   }
   for (const [id, v] of agentes) if (!presentes.has(id)) { cena?.remove(v.grupo); agentes.delete(id); }
 }

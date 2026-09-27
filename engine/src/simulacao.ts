@@ -15,6 +15,7 @@ import { descreverPersonalidade, emocaoDominante } from './emocoes';
 import { config as configMente, pulsoDaMente } from './deliberacao';
 import { atualizarObjetos, objetosIniciais, reporObjetos, tichao, type Descoberta, type Objeto } from './objetos';
 import { descreverMao, descreverTecnicas } from './tecnicas';
+import { descreverRelacao, melhorPalavra, traduzir } from './social';
 
 export const TICKS_POR_SEGUNDO = 10;
 export const DT = 1 / TICKS_POR_SEGUNDO;
@@ -301,7 +302,16 @@ export function censo(e: Estado) {
 // ---------- O que vai para o visualizador ----------
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-const agenteParaRede = (a: Agente, ctxObj: { objetos: Objeto[]; hora: number }): EntidadeRede => ({
+const agenteParaRede = (a: Agente, ctxObj: { objetos: Objeto[]; hora: number; agentes: Agente[] }): EntidadeRede => ({
+  fala: a.social.fala && ctxObj.hora - a.social.fala.quando < 0.25
+    ? { texto: a.social.fala.palavras.join(' '), traducao: a.social.fala.conceitos.map(c => traduzir(c, ctxObj)).join(' ') } : null,
+  relacoes: Object.entries(a.social.relacoes).map(([id, r]) => ({
+    nome: ctxObj.agentes.find(x => x.id === id)?.nome ?? id, descricao: descreverRelacao(r),
+    afeto: r2(r.afeto), confianca: r2(r.confianca), respeito: r2(r.respeito), ressentimento: r2(r.ressentimento) })),
+  palavras: Object.keys(a.social.lexico).map(c => ({ c, p: melhorPalavra(a, c) })).filter(x => x.p)
+    .map(x => ({ palavra: x.p!, significado: traduzir(x.c, ctxObj), forca: r2(a.social.lexico[x.c][x.p!]),
+      comum: ctxObj.agentes.some(o => o !== a && o.vivo && melhorPalavra(o, x.c) === x.p) }))
+    .sort((p, q) => q.forca - p.forca).slice(0, 12),
   tecnicas: descreverTecnicas(a),
   carrega: descreverMao(a, ctxObj as any),
   cavernas: Object.keys(a.cavernas ?? {}).length,
@@ -397,7 +407,7 @@ export function retrato(e: Estado, msMundo: number, velocidade: number): MsgEsta
   return {
     tipo: 'estado', tick: e.tick, msMundo, velocidade,
     ...(mandarObjetos ? { objetos: e.objetos.map(o => objetoParaRede(o, hora)) } : {}),
-    entidades: e.agentes.map(a => agenteParaRede(a, { objetos: e.objetos, hora })),
+    entidades: e.agentes.map(a => agenteParaRede(a, { objetos: e.objetos, hora, agentes: e.agentes })),
     animais: e.animais.map(an => animalParaRede(an, hora)),
     carcacas: e.carcacas.map(k => carcacaParaRede(k, hora)),
     frutos: e.frutos,

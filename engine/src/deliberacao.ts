@@ -9,6 +9,7 @@ import type { Agente, Objetivo } from './agente';
 import type { Contexto } from './contexto';
 import { emocaoDominante, descreverPersonalidade } from './emocoes';
 import { CAVERNAS } from '../../shared/mundo';
+import { conceitoNeutro, descreverRelacao, melhorPalavra, relacao } from './social';
 import { PALAVRAS_LIBERADAS, descreverMao, descreverTecnicas, sabe } from './tecnicas';
 
 // ---------- Contrato com o LLM ----------
@@ -45,6 +46,9 @@ export interface Situacao {
   sabe: string[];       // o que já descobriu fazer com as coisas (Fase 10)
   carrega: string[];    // o que tem nas mãos
   coisas: string[];     // coisas soltas que vê por perto
+  relacoes: string[];   // o que sente pelos outros (Fase 11)
+  palavras: string[];   // os sons que usa e o que querem dizer para ele
+  ouviu: string[];      // o que ouviu há pouco
   acoesPossiveis: AcaoLLM[];
   diario: string[];
 }
@@ -202,6 +206,12 @@ export function montarSituacao(a: Agente, ctx: Contexto, tipo: TipoDeliberacao, 
     outro: !outro ? 'não existe mais ninguém como você por perto' : dOutro < 10 ? 'a outra pessoa está perto de você'
       : dOutro < 40 ? 'a outra pessoa está por perto, mas não junto' : 'não sabe onde está a outra pessoa',
     sabe: descreverTecnicas(a), carrega: descreverMao(a, ctx), coisas,
+    relacoes: ctx.agentes.filter(o => o !== a && o.vivo).map(o => `a outra pessoa: você ${descreverRelacao(relacao(a, o.id))}`),
+    palavras: Object.keys(a.social?.lexico ?? {}).map(c => ({ c, p: melhorPalavra(a, c) })).filter(x => x.p)
+      .map(x => `"${x.p}" quer dizer ${conceitoNeutro(x.c, NOME_NEUTRO, ctx.agentes, a)}`),
+    ouviu: (a.social?.ouviu ?? []).filter(o => ctx.hora - o.quando < 12).slice(-3)
+      .map(o => `a outra pessoa disse "${o.palavras.join(' ')}"` + (o.entendeu.some(Boolean)
+        ? ` (você entendeu: ${o.entendeu.map(c => (c ? conceitoNeutro(c, NOME_NEUTRO, ctx.agentes, a) : '?')).join(', ')})` : ' (você não entendeu)')),
     acoesPossiveis: [...new Set(possiveis)],
     diario: a.deliberacao.diario.slice(-2),
   };

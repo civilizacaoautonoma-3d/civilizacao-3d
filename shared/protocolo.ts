@@ -39,6 +39,10 @@ export interface EntidadeRede {
   carrega: string[];           // o que tem nas mãos
   cavernas: number;            // quantas cavernas conhece
   casa: string | null;         // a caverna para onde sempre volta (se já tem uma)
+  // Fase 11: o que disse agora (som original + tradução para quem observa), relações e vocabulário
+  fala: { texto: string; traducao: string } | null;
+  relacoes: { nome: string; descricao: string; afeto: number; confianca: number; respeito: number; ressentimento: number }[];
+  palavras: { palavra: string; significado: string; forca: number; comum: boolean }[];
 }
 
 export interface AnimalRede {

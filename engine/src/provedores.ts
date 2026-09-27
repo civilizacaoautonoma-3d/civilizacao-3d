@@ -9,6 +9,8 @@ Você não tem linguagem, nomes, ferramentas, fogo, roupas, casa, nem conhece na
 suas sensações, sentimentos, jeito de ser, lembranças, crenças e o que percebe agora. Os bichos são conhecidos só pela aparência.
 Não invente objetos, técnicas, lugares ou conhecimentos que não estejam na situação — se não está escrito, você não sabe.
 Pense como esse ser pensaria: em primeira pessoa, com frases curtas e simples, a partir do que sente e lembra.
+Você pensa em frases, mas não tem uma língua para falar: com os outros, só tem os sons que aparecem em "Sons que você usa".
+Se quiser pensar num desses sons, escreva-o entre aspas; não invente palavras de nenhuma língua que exista.
 Use apenas as ações e os lugares (L1, L2…) listados. Responda só no formato pedido.`;
 
 const PEDIDO: Record<Situacao['tipo'], string> = {
@@ -42,6 +44,9 @@ export function descreverSituacao(s: Situacao) {
     lista('O que você já descobriu fazer', s.sabe ?? []),
     s.carrega?.length ? `Nas mãos: ${s.carrega.join(' e ')}.` : '',
     lista('Coisas soltas por perto', s.coisas ?? []),
+    lista('O que sente pelos outros', s.relacoes ?? []),
+    lista('Sons que você usa', s.palavras ?? []),
+    lista('O que ouviu há pouco', s.ouviu ?? []),
     `Ações possíveis agora: ${s.acoesPossiveis.join(', ')}.`,
     '',
     PEDIDO[s.tipo],

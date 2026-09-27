@@ -27,6 +27,7 @@ engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 80
   data/mente.jsonl   cada deliberação: situação, resposta, o que foi aplicado/rejeitado, consequência
   src/objetos.ts   objetos do mundo (pedra, graveto, fibra, lasca, pilha, fogo) e as regras materiais escondidas
   src/cavernas.ts  cavernas: perceber, entrar pela boca, dormir, virar "casa" por repetição
+  src/social.ts    relações (afeto, confiança, respeito, medo, mágoa, dívida), léxico, naming game, avisos e indicações
   src/tecnicas.ts  gestos primitivos, experimentação, técnicas descobertas, imitação (Fase 10)
   src/corpo.ts     fisiologia humana: fome, sede, sono, energia, frio, dor, saúde, morte
   src/animal.ts    animais (sem LLM): corpo, emoções da espécie, memória associativa, fuga, caça, reprodução
@@ -100,6 +101,16 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   pilha de 5+ gravetos na boca = boca tapada (+3 °C e lobo não ataca quem dorme lá) -> técnica `fechar-boca`.
   Quem sabe ganha a tarefa `melhorar_caverna` (leva capim para dentro, empilha gravetos na boca). Dentro da
   caverna a chuva não apaga o fogo. O que está dentro de uma caverna só é mexido por quem está lá dentro (guardado).
+- Fase 11: ninguém nasce falando. Para se referir a algo (água, comida, carne, caverna, fogo, perigo por espécie,
+  uma pessoa, "vem cá"), o agente inventa um som (sílabas aleatórias) e aponta. Quem ouve (até ~35 m, 45 m para
+  perigo) e vê a mesma coisa reforça som->conceito nos dois; desencontro enfraquece (naming game, inibição lateral).
+  Entendido sem ver, o som passa informação: aviso de perigo (medo, desiste de ir para lá), lugar de água/comida/
+  carne/caverna/fogo (vira lembrança, com força pela confiança), chamado. Chegar lá confere: verdade sobe a
+  confiança e a dívida, mentira/engano derruba. Quando fala: bicho temido por perto, achou o que o outro precisa,
+  indo dormir na caverna, sente falta (chama pelo nome). Relações nascem da convivência (dormir junto conta), de
+  aprender com o outro (respeito), de dicas certas e de disputar o mesmo arbusto (mágoa); laços positivos crescem
+  cada vez mais devagar e longe só esfriam. O afeto pesa na vontade de ficar perto. O LLM recebe relações, sons e o
+  que ouviu (e não pode usar palavras de línguas reais). O visualizador mostra o balão com o som e a tradução.
 - Ações primitivas; comportamentos sociais devem emergir, nunca ser programados como comandos prontos.
 - Estado atual: 2 agentes provisórios (Aru e Nia), personagens são cápsulas até a Fase 4 (Blender).
 - Animais (Fase 6): coelhos (colônias, se escondem em arbustos, dormem na toca), cervos (manadas que migram atrás
@@ -123,9 +134,9 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 ## Fases
 Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência), 6 (natureza, ecologia e animais),
 7 (percepção, memória e aprendizado), 8 (emoções e personalidade), 9 (IA deliberativa), 10 (ações primitivas, descoberta,
-construção e cavernas) — todas validadas com os dois
+construção e cavernas), 11 (relações e protolinguagem) — todas validadas com os dois
 agentes vivos o ano todo. A Fase 9 foi validada com o deliberador de teste; com o Claude de verdade ainda não (precisa de chave).
-Próximas sugeridas: 11 (relações e protolinguagem), 4 (Blender, em paralelo).
+Próximas sugeridas: 12 (ciclo de vida, reprodução e gerações), 13 (duas comunidades), 4 (Blender, em paralelo).
 Fase 10 ainda não viu: fogo por atrito, levar fogo, boca de caverna tapada (existem nas regras; raros por acaso).
 Pendências: cervos caem de ~24 para ~8 ao longo do ano (migrantes seguram abaixo de 8); javalis ainda investem
 contra humanos ~35 vezes por ano (quase sempre avisos, sem mortes); biomas.

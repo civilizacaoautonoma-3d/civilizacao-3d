@@ -9,6 +9,7 @@ import { episodio, ev, irParaPonto, sinta } from './agente';
 import { REGRAS, tichao, type Objeto, type TipoObjeto } from './objetos';
 import { celulaPasto } from './ecologia';
 import { viver } from './emocoes';
+import { mudarRelacao } from './social';
 import { CAVERNAS, cavernaEm } from '../../shared/mundo';
 import { BOCA_GRAVETOS, bocaDa, bocaFechada, fibrasPerto, irParaCaverna } from './cavernas';
 
@@ -95,6 +96,7 @@ function buscar(a: Agente, ctx: Contexto, tipo: TipoObjeto, raio = 35): 'feito' 
 export function aprender(a: Agente, t: string, ctx: Contexto, como: 'acaso' | 'imitação', de: Agente | null = null) {
   if (sabe(a, t)) return;
   a.tecnico.sabe[t] = { desde: ctx.hora, como, de: de?.id ?? null };
+  if (de) mudarRelacao(a, de, { respeito: 0.15, divida: 0.05, afeto: 0.03 });
   sinta(a, 'surpresa', 0.8); sinta(a, 'alegria', 0.6); viver(a.sentimentos, 'descoberta', ctx.hora, 2);
   ctx.descoberta(t, TECNICAS[t], a, como, de);
 }

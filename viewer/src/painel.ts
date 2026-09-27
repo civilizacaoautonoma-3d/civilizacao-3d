@@ -36,6 +36,9 @@ function htmlAgente(e: EntidadeRede) {
     ${barra('Frio', n.frio, '#9ad4e8')}
     ${n.dor > 0.01 ? barra('Dor', n.dor, '#d65c5c') : ''}
     ${e.casa ? `<p class="memoria">Casa: ${e.casa}</p>` : e.cavernas ? `<p class="memoria">Conhece ${e.cavernas} caverna(s)</p>` : ''}
+    ${e.fala ? `<p class="pensamento">Disse: <b>"${e.fala.texto}"</b> <small>(${e.fala.traducao})</small></p>` : ''}
+    ${e.relacoes?.length ? `<p class="titulo">Com os outros</p><ul class="lista">${e.relacoes.map(r => `<li>${r.nome}: ${r.descricao}</li>`).join('')}</ul>` : ''}
+    ${e.palavras?.length ? `<p class="titulo">Palavras</p><ul class="lista">${e.palavras.map(p => `<li><b>"${p.palavra}"</b> = ${p.significado}${p.comum ? ' ✔' : ''} <small>${Math.round(p.forca * 100)}%</small></li>`).join('')}</ul>` : ''}
     ${e.carrega?.length ? `<p class="memoria">Nas mãos: ${e.carrega.join(' e ')}</p>` : ''}
     ${e.tecnicas?.length ? `<p class="titulo">Sabe fazer</p><ul class="lista">${e.tecnicas.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}
     <p class="memoria">Lembra de ${e.memoria.agua} lugar(es) com água, ${e.memoria.comida} arbusto(s)` +

@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import { DT, censo, horaDoMundo, migrar, mundoNovo, passoDoMundo } from '../src/simulacao';
 import { configurarMente, type RegistroDeliberacao } from '../src/deliberacao';
 import { provedorTeste } from '../src/provedores';
+import { descreverRelacao, melhorPalavra, traduzir } from '../src/social';
 
 const dias = Number(process.argv.slice(2).find((a, i, v) => /^\d+$/.test(a) && v[i - 1] !== '--desde') ?? 30);
 const tudo = process.argv.includes('--tudo');
@@ -30,14 +31,14 @@ const e = salvo ? migrar(salvo.estado, horaDoMundo(ms), rand)! : mundoNovo(0, mu
 const pad = (n: number) => String(n).padStart(2, '0');
 const carimbo = () => { const t = tempoDoMundo(ms); return `D${pad(t.diaDoAno)} ${pad(t.hora)}:${pad(t.minuto)}`; };
 const contagem = new Map<string, number>();
-const rotina = /foi dormir|^(\S+) acordou$|descobriu|encontrou um arbusto/;
+const rotina = /foi dormir|^(\S+) acordou$|descobriu|encontrou um arbusto|disse "/;
 
 function registrar(t: string) {
   const tipo = t.replace(/\d+/g, 'N').replace(/^(Aru|Nia) /, '<agente> ');
   contagem.set(tipo, (contagem.get(tipo) ?? 0) + 1);
   if (t.startsWith('Censo')) return;
   const deAgente = /^(Aru|Nia) /.test(t);
-  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio/.test(t)) console.log(`  [${carimbo()}] ${t}`);
+  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio|palavra em comum/.test(t)) console.log(`  [${carimbo()}] ${t}`);
 }
 
 const inicio = performance.now();
@@ -72,6 +73,16 @@ for (const d of e.descobertas) console.log(`  dia ${Math.floor(d.quando / 24) + 
   (d.transmitidaPara.length ? ` -> passou para ${d.transmitidaPara.map(t => `${t.quem} (dia ${Math.floor(t.quando / 24) + 1})`).join(', ')}` : ''));
 for (const a of e.agentes) console.log(`  ${a.nome} sabe: ${Object.keys(a.tecnico.sabe).join(', ') || 'nada'} · tentou ${Object.values(a.tecnico.tentou).reduce((s, v) => s + v, 0)} vezes`);
 for (const a of e.agentes) console.log(`  ${a.nome} cavernas: ${JSON.stringify(a.cavernas)} · casa: ${a.lar ?? 'nenhuma'}`);
+console.log('\nLinguagem e relações (Fase 11):');
+for (const a of e.agentes) {
+  const c = a.social.contagem;
+  const palavras = Object.keys(a.social.lexico).map(k => ({ k, p: melhorPalavra(a, k) })).filter(x => x.p)
+    .map(x => `"${x.p}"=${traduzir(x.k, e)}${e.agentes.some(o => o !== a && melhorPalavra(o, x.k) === x.p) ? '✔' : ''}`);
+  console.log(`  ${a.nome}: ${c.falas} falas · ${c.entendidas} entendidas · ${c.desencontros} desencontros · ${c.avisos} avisos ouvidos · dicas ${c.dicasCertas} certas/${c.dicasErradas} erradas`);
+  console.log(`    palavras: ${palavras.join(' ') || 'nenhuma'}`);
+  for (const [id, r] of Object.entries(a.social.relacoes))
+    console.log(`    com ${e.agentes.find(x => x.id === id)?.nome}: ${descreverRelacao(r)} (afeto ${r.afeto.toFixed(2)}, confiança ${r.confianca.toFixed(2)}, respeito ${r.respeito.toFixed(2)}, mágoa ${r.ressentimento.toFixed(2)}, ${Math.round(r.convivencia)} h juntos)`);
+}
 const tiposObj: Record<string, number> = {};
 for (const o of e.objetos) tiposObj[o.tipo] = (tiposObj[o.tipo] ?? 0) + 1;
 console.log(`  objetos no mundo: ${Object.entries(tiposObj).map(([k, v]) => `${v} ${k}`).join(', ')}`);
