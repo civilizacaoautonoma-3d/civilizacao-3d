@@ -169,6 +169,29 @@ export const CAVERNAS: Caverna[] = [];
       CAVERNAS.push({ id: CAVERNAS.length, x, z, r: R, dir, h: heightAt(x, z), entrada });
     }
   }
+  // uma quinta caverna do outro lado do vale, bem longe do ponto inicial (onde um segundo grupo pode viver)
+  {
+    const r5 = mulberry32(SEED + 2500);
+    let melhor: Caverna | null = null, dist = 0;
+    for (const inclinacaoMin of [0.25, 0.12, 0]) {
+      for (let t = 0; t < 12000; t++) {
+        const x = (r5() - 0.5) * (WORLD_SIZE - 50), z = (r5() - 0.5) * (WORLD_SIZE - 50);
+        const d = Math.hypot(x - PONTO_INICIAL.x, z - PONTO_INICIAL.z);
+        if (d < 170 || d <= dist || !firme(x, z) || CAVERNAS.some(c => Math.hypot(c.x - x, c.z - z) < 90)) continue;
+        const gx = heightAt(x + 3, z) - heightAt(x - 3, z), gz = heightAt(x, z + 3) - heightAt(x, z - 3);
+        if (Math.hypot(gx, gz) / 6 < inclinacaoMin) continue;
+        const dir = Math.atan2(-gx, -gz);
+        const entrada = { x: x + Math.sin(dir) * (R + 1.6), z: z + Math.cos(dir) * (R + 1.6) };
+        if (!firme(entrada.x, entrada.z) || !livre(x, z, R + 1.2) || !livre(entrada.x, entrada.z, 1.5)) continue;
+        let ok = true;
+        for (let a = 0; a < 6.28; a += 0.8) if (!firme(x + Math.sin(a) * R, z + Math.cos(a) * R)) ok = false;
+        if (!ok) continue;
+        melhor = { id: CAVERNAS.length, x, z, r: R, dir, h: heightAt(x, z), entrada }; dist = d;
+      }
+      if (melhor) break;
+    }
+    if (melhor) CAVERNAS.push(melhor);
+  }
   // paredes: blocos de rocha em volta, menos na boca
   for (const c of CAVERNAS) {
     for (let a = 0; a < Math.PI * 2; a += 0.42) {
@@ -187,4 +210,22 @@ export const CAVERNAS: Caverna[] = [];
 export function cavernaEm(x: number, z: number): Caverna | null {
   for (const c of CAVERNAS) if (Math.hypot(c.x - x, c.z - z) < c.r - 0.5) return c;
   return null;
+}
+
+// ---------- Arbustos do outro lado do vale (em volta da quinta caverna), para um segundo grupo poder viver ali ----------
+{
+  const c5 = CAVERNAS[4];
+  if (c5) {
+    const r = mulberry32(SEED + 3000);
+    const livre = (x: number, z: number) => OBSTACULOS.every(o => Math.hypot(o.x - x, o.z - z) > o.r + 1.2)
+      && ARBUSTOS.every(b => Math.hypot(b.x - x, b.z - z) > 4) && !cavernaEm(x, z);
+    let postos = 0;
+    for (let t = 0; postos < 10 && t < 4000; t++) {
+      const ang = r() * Math.PI * 2, d = 15 + r() * 50;
+      const x = c5.x + Math.cos(ang) * d, z = c5.z + Math.sin(ang) * d, h = heightAt(x, z);
+      if (h > 1 && h < 13 && Math.abs(x) < WORLD_SIZE / 2 - 12 && Math.abs(z) < WORLD_SIZE / 2 - 12 && livre(x, z)) {
+        ARBUSTOS.push({ x, z, h, max: 4 + Math.floor(r() * 4) }); postos++;
+      }
+    }
+  }
 }

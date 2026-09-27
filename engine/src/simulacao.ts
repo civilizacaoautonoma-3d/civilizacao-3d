@@ -17,6 +17,7 @@ import { atualizarObjetos, objetosIniciais, reporObjetos, tichao, type Descobert
 import { descreverMao, descreverTecnicas } from './tecnicas';
 import { descreverRelacao, melhorPalavra, traduzir } from './social';
 import { crescimento, descreverFase } from './vida';
+import { fundarGrupo, lugarParaNovoGrupo, NOME_GRUPO } from './comunidades';
 
 export const TICKS_POR_SEGUNDO = 10;
 export const DT = 1 / TICKS_POR_SEGUNDO;
@@ -30,6 +31,8 @@ export interface Estado {
   introduzidas: Especie[];   // espécies que já foram soltas neste mundo (as novas chegam em mundos antigos)
   objetos: Objeto[];          // Fase 10: pedras, gravetos, fibras, lascas, pilhas, fogos
   genealogia: Parente[];      // Fase 12: quem nasceu de quem, quando nasceu e morreu
+  grupos: { numero: number; fundadoEm: number; x: number; z: number }[];   // Fase 13
+  contatos: { quando: number; quem: string; viu: string; grupos: [number, number] }[];
   descobertas: Descoberta[];  // registro histórico de quem descobriu o quê e para quem passou
 }
 
@@ -48,7 +51,10 @@ export function mundoNovo(criadoEm: number, rand: () => number): Estado {
     frutos: ARBUSTOS.map(b => Math.ceil(b.max / 2)),
     animais: [], carcacas: [], pasto: pastoInicial(), raizes: raizesIniciais(), marcas: [],
     proximoId: 1, ultimoCenso: 0, introduzidas: [], objetos: [], descobertas: [], genealogia: [],
+    grupos: [{ numero: 1, fundadoEm: 0, x: PONTO_INICIAL.x, z: PONTO_INICIAL.z }], contatos: [],
   };
+  for (const a of e.agentes) a.origem = { x: PONTO_INICIAL.x, z: PONTO_INICIAL.z, chegou: TEMPO.HORA_INICIAL };
+  fundarSegundoGrupo(e, TEMPO.HORA_INICIAL, rand);
   e.objetos = objetosIniciais(rand, () => e.proximoId++);
   povoar(e, TEMPO.HORA_INICIAL, rand);
   return e;
@@ -59,13 +65,28 @@ function completarEstado(e: Estado, hora: number, rand: () => number) {
   e.agentes.forEach(completarAgente);
   e.animais.forEach(completarAnimal);
   e.raizes ??= raizesIniciais();
+  while (e.frutos.length < ARBUSTOS.length) e.frutos.push(Math.ceil(ARBUSTOS[e.frutos.length].max / 2));   // arbustos novos no mapa
   e.marcas ??= [];
   e.introduzidas ??= [...new Set(e.animais.map(an => an.especie))];
   e.objetos ??= objetosIniciais(rand, () => e.proximoId++);
   e.descobertas ??= [];
   e.genealogia ??= [];
+  e.contatos ??= [];
+  e.grupos ??= [{ numero: 1, fundadoEm: 0, x: PONTO_INICIAL.x, z: PONTO_INICIAL.z }];
+  // mundos antigos: um segundo grupo chega ao vale, longe e sem que ninguém saiba
+  if (!e.grupos.some(g => g.numero === 2)) fundarSegundoGrupo(e, hora, rand);
   povoar(e, hora, rand);
   return e;
+}
+
+// três casais sem parentesco, num lugar que o grupo 1 nunca viu
+function fundarSegundoGrupo(e: Estado, hora: number, rand: () => number) {
+  const centro = lugarParaNovoGrupo(e.agentes, rand);
+  const novos = fundarGrupo(2, centro, 3, () => `ag_${e.proximoId++}`, hora, rand, e.agentes.map(a => a.nome));
+  novos.forEach(completarAgente);
+  e.agentes.push(...novos);
+  e.grupos.push({ numero: 2, fundadoEm: hora, x: centro.x, z: centro.z });
+  console.log(`Um segundo grupo (${novos.map(a => a.nome).join(', ')}) chegou ao vale em ${centro.x.toFixed(0)}, ${centro.z.toFixed(0)}`);
 }
 
 // estados da Fase 5 (versão 2) ganham animais e pasto; os agentes continuam como estavam
@@ -230,6 +251,13 @@ export function passoDoMundo(e: Estado, msMundo: number, vel: number, rand: () =
     novaCarcaca: c => { const k = { ...c, id: e.proximoId++ }; e.carcacas.push(k); return k; },
     nascer: a => { nascidos.push(a); porId.set(a.id, a); },
     nascerAgente: a => { bebes.push(a); porId.set(a.id, a); },
+    contato: (a, o) => {
+      const par: [number, number] = [a.comunidade, o.comunidade];
+      const primeiro = !e.contatos.some(c => (c.grupos[0] === par[0] && c.grupos[1] === par[1]) || (c.grupos[0] === par[1] && c.grupos[1] === par[0]));
+      e.contatos.push({ quando: ctx.hora, quem: a.nome, viu: o.nome, grupos: par });
+      if (e.contatos.length > 200) e.contatos.splice(1, 1);   // guarda o primeiro para sempre
+      if (primeiro) registrar(`PRIMEIRO CONTATO entre o ${NOME_GRUPO[par[0]]} e o ${NOME_GRUPO[par[1]]}: ${a.nome} encontrou ${o.nome}`);
+    },
     objetos: e.objetos,
     criarObjeto: o => { const obj = { ...o, id: e.proximoId++ } as Objeto; e.objetos.push(obj); objetosMudaram = true; return obj; },
     objetosMudaram: () => { objetosMudaram = true; },
@@ -325,6 +353,8 @@ const agenteParaRede = (a: Agente, ctxObj: { objetos: Objeto[]; hora: number; ag
   carregadoPor: a.vida.carregadoPor,
   doente: a.vida.doenca?.tipo ?? null,
   geracao: a.vida.geracao,
+  comunidade: a.comunidade,
+  pele: r2(a.vida.genes.pele),
   fala: a.social.fala && ctxObj.hora - a.social.fala.quando < 0.25
     ? { texto: a.social.fala.palavras.join(' '), traducao: a.social.fala.conceitos.map(c => traduzir(c, ctxObj)).join(' ') } : null,
   relacoes: Object.entries(a.social.relacoes).map(([id, r]) => ({
@@ -378,7 +408,7 @@ const PALAVRA_ACAO: Record<string, string> = {
   comer: 'comer', beber: 'beber água', dormir: 'dormir', descansar: 'descansar', abrigar: 'se abrigar',
   explorar: 'explorar', fugir: 'fugir', aproximar: 'ficar perto do outro', cacar: 'caçar',
   experimentar: 'mexer nas coisas', aquecer: 'se esquentar na luz quente', fazer_fogo: 'fazer a luz quente',
-  lascar: 'fazer pedra afiada', construir: 'empilhar gravetos', cavar: 'cavar raízes', melhorar_caverna: 'arrumar a caverna', cuidar: 'cuidar do bebê',
+  lascar: 'fazer pedra afiada', construir: 'empilhar gravetos', cavar: 'cavar raízes', melhorar_caverna: 'arrumar a caverna', cuidar: 'cuidar do bebê', partilhar: 'levar comida a quem tem fome',
 };
 
 function descreverEpisodio(e: Episodio) {

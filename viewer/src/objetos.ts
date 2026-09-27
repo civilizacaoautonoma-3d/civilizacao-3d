@@ -14,7 +14,7 @@ export function iniciarObjetos(s: THREE.Scene) { cena = s; }
 const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 1, ...extra });
 const M = {
   pedra: mat(0x8a8580), lasca: mat(0x5d5a58, { roughness: 0.4, metalness: 0.2 }), graveto: mat(0x6b4a2b), fibra: mat(0xa8a05a),
-  carne: mat(0x6a2a22), cinza: mat(0x3a3430),
+  carne: mat(0x6a2a22), cinza: mat(0x3a3430), fruto: mat(0xc0392b, { roughness: 0.5 }),
   chama: new THREE.MeshBasicMaterial({ color: 0xffa030, transparent: true, opacity: 0.85, depthWrite: false }),
   miolo: new THREE.MeshBasicMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.9, depthWrite: false }),
   brasa: new THREE.MeshBasicMaterial({ color: 0xff5a1a }),
@@ -45,6 +45,8 @@ function criar(o: ObjetoRede): ObjetoVisual {
     grupo.add(b); v.brasa = b;
   } else if (o.tipo === 'fibra') {
     for (let i = 0; i < 3; i++) { const f = new THREE.Mesh(G.fibra, M.fibra); f.position.set((i - 1) * 0.07, 0.15, 0); f.rotation.z = (i - 1) * 0.3; grupo.add(f); }
+  } else if (o.tipo === 'fruto') {
+    const m = new THREE.Mesh(G.carne, M.fruto); m.scale.setScalar(0.6); m.position.y = 0.07; grupo.add(m);
   } else if (o.tipo === 'carne') {
     const m = new THREE.Mesh(G.carne, M.carne); m.scale.set(1.3, 0.6, 1); m.position.y = 0.07; grupo.add(m);
   } else if (o.tipo === 'fogo') {

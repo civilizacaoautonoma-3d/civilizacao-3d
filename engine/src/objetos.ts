@@ -4,7 +4,7 @@ import { ARBUSTOS, ARVORES, CAVERNAS, PEDRAS, cavernaEm, heightAt } from '../../
 import type { Especie } from '../../shared/especies';
 import { terraSeca } from './espaco';
 
-export type TipoObjeto = 'pedra' | 'graveto' | 'fibra' | 'lasca' | 'carne' | 'pilha' | 'fogo';
+export type TipoObjeto = 'pedra' | 'graveto' | 'fibra' | 'lasca' | 'carne' | 'pilha' | 'fogo' | 'fruto';
 
 export interface Objeto {
   id: number; tipo: TipoObjeto; x: number; z: number;
@@ -15,6 +15,7 @@ export interface Objeto {
   acesoAte?: number;                 // graveto em brasa (tição): até quando queima
   desde?: number;                    // carne: hora em que o bicho morreu
   especie?: Especie;                 // carne: de que bicho
+  deixadoPor?: string;               // comida deixada por alguém junto de outro (partilha)
 }
 
 export interface Descoberta {
@@ -97,7 +98,8 @@ export function atualizarObjetos(objs: Objeto[], c: Clima, rand: () => number, p
     avisar('Um raio caiu e pôs fogo numa árvore');
     mudou = true;
   }
-  const restantes = objs.filter(o => !(o.tipo === 'fogo' && (o.combustivel ?? 0) <= 0) && !(o.tipo === 'pilha' && (o.qtd ?? 0) <= 0));
+  const restantes = objs.filter(o => !(o.tipo === 'fogo' && (o.combustivel ?? 0) <= 0) && !(o.tipo === 'pilha' && (o.qtd ?? 0) <= 0)
+    && !(o.tipo === 'fruto' && c.hora - (o.desde ?? c.hora) > 72) && !(o.tipo === 'carne' && !o.carregadoPor && c.hora - (o.desde ?? c.hora) > 96));
   if (restantes.length !== objs.length) mudou = true;
   return { mudou, restantes };
 }

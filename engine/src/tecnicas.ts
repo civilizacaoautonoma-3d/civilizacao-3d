@@ -348,7 +348,7 @@ function experimentar(a: Agente, ctx: Contexto) {
 
 const NOME_OBJETO: Record<TipoObjeto, string> = {
   pedra: 'uma pedra', graveto: 'um graveto', fibra: 'umas fibras', lasca: 'uma pedra afiada', carne: 'um pedaço de carne',
-  pilha: 'uma pilha de gravetos', fogo: 'fogo',
+  pilha: 'uma pilha de gravetos', fogo: 'fogo', fruto: 'um fruto',
 };
 
 function irAteRocha(a: Agente, ctx: Contexto) {

@@ -39,7 +39,7 @@ function registrar(t: string) {
   contagem.set(tipo, (contagem.get(tipo) ?? 0) + 1);
   if (t.startsWith('Censo')) return;
   const deAgente = !!quem;
-  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio|palavra em comum|Nasceu|como um par/.test(t)) console.log(`  [${carimbo()}] ${t}`);
+  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio|palavra em comum|Nasceu|como um par|PRIMEIRO CONTATO|não é do seu grupo|voz que não conhecia/.test(t)) console.log(`  [${carimbo()}] ${t}`);
 }
 
 const inicio = performance.now();
@@ -86,6 +86,12 @@ for (const a of e.agentes) {
   for (const [id, r] of Object.entries(a.social.relacoes))
     console.log(`    com ${e.agentes.find(x => x.id === id)?.nome}: ${descreverRelacao(r)} (afeto ${r.afeto.toFixed(2)}, confiança ${r.confianca.toFixed(2)}, respeito ${r.respeito.toFixed(2)}, mágoa ${r.ressentimento.toFixed(2)}, ${Math.round(r.convivencia)} h juntos)`);
 }
+console.log('\nComunidades (Fase 13):');
+for (const g of e.grupos) {
+  const membros = e.agentes.filter(a => a.comunidade === g.numero);
+  console.log(`  grupo ${g.numero}: ${membros.filter(a => a.vivo).length} vivos de ${membros.length} (${membros.map(a => a.nome + (a.vivo ? '' : '†')).join(', ')})`);
+}
+console.log(`  contatos entre grupos: ${e.contatos.length}${e.contatos[0] ? ` · o primeiro no dia ${Math.floor(e.contatos[0].quando / 24) + 1}: ${e.contatos[0].quem} viu ${e.contatos[0].viu}` : ' · nenhum'}`);
 console.log('\nÁrvore genealógica (Fase 12):');
 const dia = (h: number) => Math.floor(h / 24) + 1;
 for (const p of e.genealogia) {

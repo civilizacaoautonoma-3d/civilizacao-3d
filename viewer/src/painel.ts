@@ -24,7 +24,7 @@ function htmlAgente(e: EntidadeRede) {
   const n = e.necessidades;
   const caca = e.caca.tentativas > 0 ? ` · caçou ${e.caca.sucessos} de ${e.caca.tentativas} tentativas` : '';
   return `<h3>${e.nome} <small>${e.idade ?? (e.sexo === 'M' ? 'homem' : 'mulher')}${e.sentimentos?.jeito.length ? ' · ' + e.sentimentos.jeito.join(', ') : ''}</small></h3>
-    ${e.pais || e.gravida || e.doente ? `<p class="memoria">${[e.pais, e.gravida ? 'grávida' : '', e.doente ? `com ${e.doente}` : '', e.geracao ? `geração ${e.geracao}` : ''].filter(Boolean).join(' · ')}</p>` : ''}
+    ${e.pais || e.gravida || e.doente || e.comunidade ? `<p class="memoria">${[e.comunidade ? `grupo ${e.comunidade}` : '', e.pais, e.gravida ? 'grávida' : '', e.doente ? `com ${e.doente}` : '', e.geracao ? `geração ${e.geracao}` : ''].filter(Boolean).join(' · ')}</p>` : ''}
     <p class="intencao">${e.intencao}</p>
     ${e.mente?.pensamento ? `<p class="pensamento">“${e.mente.pensamento}”</p>` : ''}
     ${e.mente?.plano?.length ? `<p class="memoria">Plano de hoje: ${e.mente.plano.join(', ')}</p>` : ''}

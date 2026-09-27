@@ -50,7 +50,9 @@ function texturaFala(texto: string, traducao: string) {
 }
 
 function criarAgente(e: EntidadeRede): AgenteVisual {
-  const corPele = new THREE.Color(e.sexo === 'M' ? 0xb07850 : 0xd09a74);
+  // tom de pele pelo gene (herdado; o grupo 2 tende a ser mais escuro)
+  const clara = new THREE.Color(0xe0b08c), escura = new THREE.Color(0x6b4428);
+  const corPele = clara.clone().lerp(escura, e.pele ?? (e.sexo === 'M' ? 0.45 : 0.3));
   const pele = new THREE.MeshStandardMaterial({ color: corPele.clone() });
   const corpo = new THREE.Mesh(new THREE.CapsuleGeometry(e.sexo === 'M' ? 0.3 : 0.26, e.sexo === 'M' ? 1.05 : 0.95, 4, 8), pele);
   corpo.position.y = 0.8;

@@ -35,4 +35,6 @@ export interface Contexto {
   descoberta: (tecnica: string, descricao: string, quem: Agente, como: 'acaso' | 'imitação', de: Agente | null) => void;
   // Fase 12
   nascerAgente: (a: Agente) => void;
+  // Fase 13: alguém de um grupo viu (ou ouviu) alguém de outro pela primeira vez
+  contato: (a: Agente, o: Agente) => void;
 }

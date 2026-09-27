@@ -4,6 +4,7 @@
 // habituação e sensibilização.
 import { ARBUSTOS, ARVORES, WATER_LEVEL, cavernaEm, heightAt, obstaculosPerto, resolverColisao } from '../../shared/mundo';
 import { bocaFechada } from './cavernas';
+import { idadeDias } from './vida';
 import { PERFIS, type Especie, type EmocaoAnimal, type PerfilEspecie } from '../../shared/especies';
 import type { Acao } from '../../shared/protocolo';
 import { ehAnimal, type Contexto, type Ser } from './contexto';
@@ -641,6 +642,7 @@ function deveEnfrentar(an: Animal, s: Ser, ctx: Contexto) {
   const d = distancia(an, s);
   if (an.corpo.saude < 0.35 || !an.adulto) return false;
   if (!ehAnimal(s) && s.acao === 'dormindo') return false;   // quem dorme não ameaça ninguém
+  if (!ehAnimal(s) && idadeDias(s, ctx.hora) < 180) return false;   // bebê ou criança pequena não é ameaça
   if (ctx.hora - an.ultimaBriga < 1) return false;            // depois de uma investida, dá um tempo
   const filhotes = ctx.perto(an.x, an.z, 15).some(o => o.vivo && o.mae === an.id && Math.hypot(o.x - an.x, o.z - an.z) < 15);
   return (filhotes && d < 6) || d < 3 || (an.sexo === 'M' && d < 4.5 && an.corpo.saude > 0.6);
@@ -964,7 +966,9 @@ function executar(an: Animal, ctx: Contexto) {
         an.rotacao = Math.atan2(alvo.x - an.x, alvo.z - an.z);
         an.ocupadoAte = ctx.hora + 0.015;
         if (!ehAnimal(alvo)) {
-          if (ctx.rand() < 0.5) ferirAgente(alvo, 0.12, an, ctx);
+          // lobo é oportunista: ataca quem dorme ou está fraco; se a pessoa acorda e está inteira, desiste
+          if (alvo.acao !== 'dormindo' && alvo.corpo.saude > 0.45) return desistir('a presa acordou e ficou de pé');
+          if (ctx.rand() < 0.5) { ferirAgente(alvo, 0.12, an, ctx); an.ocupadoAte = ctx.hora + 0.12; }   // morde e recua
           return;
         }
         const acerto = alvo.especie === 'coelho' ? 0.5 : 0.4;

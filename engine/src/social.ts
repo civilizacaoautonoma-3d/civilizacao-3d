@@ -12,6 +12,7 @@ import { ev, lembrar, sinta } from './agente';
 import { fogosPerto } from './objetos';
 import { pertoDaAgua } from './espaco';
 import { atualizarAtracao, ehBebe, ehCrianca, formamPar, idadeDias } from './vida';
+import { conhece, conhecer } from './comunidades';
 
 export interface Relacao {
   afeto: number; confianca: number; respeito: number; medo: number; ressentimento: number; divida: number;
@@ -31,6 +32,9 @@ export interface EstadoSocial {
   chamadoPor: { id: string; ate: number } | null;
   compartilhadas: string[];                         // conceitos em que já percebeu usar a mesma palavra do outro
   contagem: { falas: number; entendidas: number; desencontros: number; avisos: number; dicasCertas: number; dicasErradas: number };
+  deuComida?: number; recebeuComida?: number;       // partilha
+  estranhosVistos?: number;                         // Fase 13: pessoas de fora do grupo que já viu
+  vozEstranha?: number;                             // última vez que ouviu uma voz que não conhecia
 }
 
 export const novoEstadoSocial = (): EstadoSocial => ({
@@ -42,6 +46,10 @@ const lim = (v: number, min = 0, max = 1) => Math.min(max, Math.max(min, v));
 export function relacao(a: Agente, id: string): Relacao {
   return a.social.relacoes[id] ??= { afeto: 0, confianca: 0.3, respeito: 0, medo: 0, ressentimento: 0, divida: 0, convivencia: 0 };
 }
+// ler sem criar: quem ele não conhece não tem relação (vale tudo zero)
+const NENHUMA: Relacao = Object.freeze({ afeto: 0, confianca: 0, respeito: 0, medo: 0, ressentimento: 0, divida: 0, convivencia: 0 }) as Relacao;
+export const lerRelacao = (a: Agente, id: string): Relacao => a.social.relacoes[id] ?? NENHUMA;
+
 export function mudarRelacao(a: Agente, outro: Agente, mudanca: Partial<Omit<Relacao, 'convivencia'>>) {
   const r = relacao(a, outro.id);
   // laço positivo cresce cada vez mais devagar perto do máximo (confiança plena leva muito tempo)
@@ -126,10 +134,19 @@ export function falar(a: Agente, ctx: Contexto, conceitos: string[], apontando: 
 
 function ouvir(o: Agente, f: Agente, palavras: string[], conceitos: string[], ponto: { x: number; z: number } | null, ctx: Contexto) {
   // quem ouve olha: para onde o outro aponta, ou para ele
+  const vis = alcanceVisao(ctx);
+  if (!conhece(o, f.id)) {
+    if (Math.hypot(f.x - o.x, f.z - o.z) < vis) conhecer(o, f, ctx, 'viu');
+    else {
+      if (ctx.hora - (o.social.vozEstranha ?? -1e9) > 6) { conhecer(o, f, ctx, 'ouviu'); }
+      o.social.vozEstranha = ctx.hora;
+      o.rotacao = Math.atan2(f.x - o.x, f.z - o.z);
+      return;
+    }
+  }
   const olhar = ponto ?? f;
   if (o.acao !== 'correndo') o.rotacao = Math.atan2(olhar.x - o.x, olhar.z - o.z);
   const r = relacao(o, f.id);
-  const vis = alcanceVisao(ctx);
   const entendeu: (string | null)[] = [];
   palavras.forEach((p, i) => {
     const c = conceitos[i];
@@ -231,10 +248,15 @@ function conferirDicas(a: Agente, ctx: Contexto) {
 // ---------- A cada decisão: convivência, vontade de dizer algo, conferir o que ouviu ----------
 export function pulsoSocial(a: Agente, ctx: Contexto, horas: number) {
   const P = a.personalidade;
+  const vis = alcanceVisao(ctx);
   for (const o of ctx.agentes) {
     if (o === a || !o.vivo) continue;
-    const r = relacao(a, o.id);
     const d = Math.hypot(o.x - a.x, o.z - a.z);
+    if (!conhece(a, o.id)) {
+      if (a.acao === 'dormindo' || d > vis) continue;
+      conhecer(a, o, ctx, 'viu');
+    }
+    const r = relacao(a, o.id);
     // estar junto cria laço (mais em quem é amável); longe, o laço esfria bem devagar; mágoas e medos passam
     if (d < 6) {
       r.convivencia += horas;
@@ -279,7 +301,7 @@ export function pulsoSocial(a: Agente, ctx: Contexto, horas: number) {
 
 // quanto o outro pesa na vontade de ficar perto (entra na decisão de aproximar)
 export function vontadeDeFicarPerto(a: Agente, outro: Agente, hora: number) {
-  const r = relacao(a, outro.id);
+  const r = lerRelacao(a, outro.id);
   const chamado = a.social.chamadoPor && a.social.chamadoPor.id === outro.id && hora < a.social.chamadoPor.ate;
   return { fator: Math.max(0.1, 0.6 + r.afeto - 0.8 * r.ressentimento - 0.6 * r.medo), chamado: chamado ? 0.3 + 0.4 * Math.max(0, r.afeto) : 0 };
 }

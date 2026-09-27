@@ -51,6 +51,9 @@ export interface EntidadeRede {
   carregadoPor: string | null; // id de quem carrega este bebê
   doente: string | null;
   geracao: number;
+  // Fase 13
+  comunidade: number;          // 1, 2… (só quem observa sabe)
+  pele: number;                // tom de pele herdado (0 claro … 1 escuro)
 }
 
 export interface AnimalRede {
@@ -68,7 +71,7 @@ export interface CarcacaRede {
   porcoes: number; estragada: boolean;
 }
 
-export type TipoObjetoRede = 'pedra' | 'graveto' | 'fibra' | 'lasca' | 'carne' | 'pilha' | 'fogo';
+export type TipoObjetoRede = 'pedra' | 'graveto' | 'fibra' | 'lasca' | 'carne' | 'pilha' | 'fogo' | 'fruto';
 export interface ObjetoRede {
   id: number; tipo: TipoObjetoRede; x: number; z: number;
   carregadoPor: string | null;

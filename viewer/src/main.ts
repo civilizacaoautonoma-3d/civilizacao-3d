@@ -439,11 +439,12 @@ function animate() {
     `${clima.tipo} · ${clima.temperatura.toFixed(1)} °C · vento ${Math.round(clima.vento * 40)} km/h<br>` +
     `Servidor ${conectado ? 'conectado' : 'desconectado'} · ${agentes.size} agentes · tempo ×${relogio.velocidade} (T) · FPS ${fps}<br>` +
     `${bichos.coelho} coelhos · ${bichos.cervo} cervos · ${bichos.lobo} lobos · ${bichos.javali} javalis · ${bichos.ave} pássaros · ${bichos.peixe} peixes (F para ir até eles)<br>` +
-    [...agentes.values()].map(v => {
-      // bebês e crianças mostram a fase; quem morreu ganha uma cruz (o corpo fica no mundo)
-      const fase = v.dados.idade?.startsWith('bebê') ? ' (bebê)' : /^(menino|menina)/.test(v.dados.idade ?? '') ? ' (criança)' : '';
-      return `${v.dados.nome}${v.dados.acao === 'morto' ? ' †' : fase}: ${ondeEsta(v.grupo.position)}`;
-    }).join(' · ');
+    [...new Set([...agentes.values()].map(v => v.dados.comunidade ?? 1))].sort().map(g => `<b>Grupo ${g}</b>: ` +
+      [...agentes.values()].filter(v => (v.dados.comunidade ?? 1) === g).map(v => {
+        // bebês e crianças mostram a fase; quem morreu ganha uma cruz (o corpo fica no mundo)
+        const fase = v.dados.idade?.startsWith('bebê') ? ' (bebê)' : /^(menino|menina)/.test(v.dados.idade ?? '') ? ' (criança)' : '';
+        return `${v.dados.nome}${v.dados.acao === 'morto' ? ' †' : fase}: ${ondeEsta(v.grupo.position)}`;
+      }).join(' · ')).join('<br>');
 
   renderer.render(scene, camera);
 }

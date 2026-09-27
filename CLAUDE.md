@@ -11,7 +11,7 @@ Mundo 3D persistente em que agentes autônomos vivem, sobrevivem e formam uma ci
 ## Estrutura
 ```
 shared/   código usado pelo motor e pelo visualizador (sem dependências)
-  mundo.ts      geração determinística por SEED: relevo, árvores, pedras, arbustos, 4 cavernas, colisão
+  mundo.ts      geração determinística por SEED: relevo, árvores, pedras, arbustos, 5 cavernas, colisão
   clima.ts      relógio do mundo, estações, sol/lua, clima (não usa Three.js)
   especies.ts   perfis das espécies (coelho, cervo, lobo, javali, pássaro, peixe): sentidos, instintos, clima, ciclo de vida
   protocolo.ts  mensagens WebSocket servidor <-> navegador
@@ -27,6 +27,8 @@ engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 80
   data/mente.jsonl   cada deliberação: situação, resposta, o que foi aplicado/rejeitado, consequência
   src/objetos.ts   objetos do mundo (pedra, graveto, fibra, lasca, pilha, fogo) e as regras materiais escondidas
   src/cavernas.ts  cavernas: perceber, entrar pela boca, dormir, virar "casa" por repetição
+  src/comunidades.ts segundo grupo: onde nasce, conhecer alguém (só vendo/ouvindo), primeiro contato
+  src/partilha.ts  colher para levar, dar comida a quem tem fome, comer o que tem na mão ou deixaram ao lado
   src/vida.ts      ciclo de vida: idade, genes, atração, gravidez, parto, bebê, infância, velhice, febre
   src/social.ts    relações (afeto, confiança, respeito, medo, mágoa, dívida), léxico, naming game, avisos e indicações
   src/tecnicas.ts  gestos primitivos, experimentação, técnicas descobertas, imitação (Fase 10)
@@ -122,6 +124,21 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   normalmente; outro adulto leva até a mãe quando ele precisa mamar; a mãe vai buscar o bebê com fome. Crianças
   andam mais devagar, seguem a mãe, aprendem palavras 2x mais depressa e começam a falar aos 90 dias. Ferimento pode
   virar febre. Árvore genealógica em `genealogia` do estado. Bebê e criança pequena não usam o LLM.
+- Partilha: quem come num arbusto e já saciou pode colher um fruto para levar (se alguém querido tem fome ou o frio
+  vem); com a pedra afiada, corta um pedaço de carne. Quem carrega comida e vê alguém querido com fome leva e larga
+  ao lado; quem tem fome come o que tem na mão ou o que deixaram junto dele. Receber dá gratidão (afeto, dívida).
+  Fruto colhido apodrece em 3 dias; carne largada estraga.
+- Fase 13: um segundo grupo (3 casais sem parentesco) nasce longe do primeiro, perto de água e de uma caverna que o
+  grupo 1 não conhece (a quinta caverna e 10 arbustos extras do outro lado do vale existem para isso). Em mundos
+  antigos, ele chega quando o motor carrega. Ninguém conhece ninguém de fora: a relação só nasce ao ver (ou ouvir)
+  a pessoa. Cada grupo vive numa área de casa (centro = caverna de casa ou onde chegou; raio 50 m + 0,6 m/dia):
+  explorar, comer e beber fora dela custa mais, menos no aperto de verdade (fome/sede acima de 70%, some em 95%).
+  Primeiro contato: surpresa, medo (neuroticismo) ou curiosidade (abertura), confiança baixa, momento marcante para
+  o LLM; as palavras de um grupo não significam nada para o outro. Em validação, o contato veio por volta do dia 60-70.
+  Bebês mamam com a mãe ou com outra mulher do grupo que esteja amamentando; órfãos são cuidados pelo grupo.
+- Rede de segurança: agente querendo andar e parado no mesmo ponto por 1,5 h desiste do alvo e sai para outro lado.
+- Lobo é oportunista com humanos (desiste se a vítima acorda inteira; morde e recua); com bicho perigoso acordado
+  por perto ninguém volta a dormir. Javali não investe contra bebês nem crianças pequenas.
 - Ações primitivas; comportamentos sociais devem emergir, nunca ser programados como comandos prontos.
 - Estado atual: 2 agentes provisórios (Aru e Nia), personagens são cápsulas até a Fase 4 (Blender).
 - Animais (Fase 6): coelhos (colônias, se escondem em arbustos, dormem na toca), cervos (manadas que migram atrás
@@ -145,10 +162,11 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 ## Fases
 Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência), 6 (natureza, ecologia e animais),
 7 (percepção, memória e aprendizado), 8 (emoções e personalidade), 9 (IA deliberativa), 10 (ações primitivas, descoberta,
-construção e cavernas), 11 (relações e protolinguagem), 12 (ciclo de vida e gerações) — todas validadas com os dois
+construção e cavernas), 11 (relações e protolinguagem), 12 (ciclo de vida e gerações), 13 (duas comunidades) — todas validadas
 agentes vivos o ano todo. A Fase 9 foi validada com o deliberador de teste; com o Claude de verdade ainda não (precisa de chave).
-Próximas sugeridas: 13 (duas comunidades), 4 (Blender, em paralelo).
-Pendência da Fase 12: não há como dar comida a um filho desmamado (o Tine passou fome no primeiro inverno).
+Próximas sugeridas: 4 (Blender), teste da mente com o Claude de verdade, fases seguintes da documentação.
+Pendências: javalis ainda investem contra adultos com frequência (mataram uma mãe na validação da Fase 13);
+cervos caem ao longo do ano; biomas.
 Fase 10 ainda não viu: fogo por atrito, levar fogo, boca de caverna tapada (existem nas regras; raros por acaso).
 Pendências: cervos caem de ~24 para ~8 ao longo do ano (migrantes seguram abaixo de 8); javalis ainda investem
 contra humanos ~35 vezes por ano (quase sempre avisos, sem mortes); biomas.

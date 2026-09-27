@@ -8,7 +8,7 @@ import { mulberry32 } from '../../shared/mundo';
 import type { Contexto } from './contexto';
 import type { Agente } from './agente';
 import { completarAgente, ev, novoAgente, sinta } from './agente';
-import { mudarRelacao, relacao } from './social';
+import { lerRelacao, mudarRelacao, relacao } from './social';
 import { novaPersonalidade, type Personalidade } from './emocoes';
 
 // idades em dias do mundo
@@ -127,13 +127,13 @@ export function atualizarAtracao(a: Agente, o: Agente, ctx: Contexto, horas: num
   if (!podem) { r.atracao = Math.max(0, antes - horas * 0.01); return; }
   if (perto && r.afeto > 0.1) r.atracao = lim(antes + horas * 0.004 * (0.5 + r.afeto) * (1 - antes));
   else r.atracao = Math.max(0, antes - horas * 0.00012);   // longe, esfria bem devagar
-  const dele = relacao(o, a.id).atracao ?? 0;
+  const dele = lerRelacao(o, a.id).atracao ?? 0;
   if (antes < 0.5 && r.atracao >= 0.5 && dele >= 0.5) {
     ctx.evento(`${a.nome} e ${o.nome} passaram a andar sempre juntos, como um par`);
     sinta(a, 'alegria', 0.6); sinta(o, 'alegria', 0.6);
   }
 }
-export const formamPar = (a: Agente, o: Agente) => (relacao(a, o.id).atracao ?? 0) >= 0.5 && (relacao(o, a.id).atracao ?? 0) >= 0.5;
+export const formamPar = (a: Agente, o: Agente) => (lerRelacao(a, o.id).atracao ?? 0) >= 0.5 && (lerRelacao(o, a.id).atracao ?? 0) >= 0.5;
 
 // ---------- Concepção: o par dorme junto; às vezes vem um filho ----------
 // vale quando qualquer um dos dois deita (quem chega depois também conta); uma chance por noite
@@ -169,6 +169,8 @@ export function parto(mae: Agente, ctx: Contexto) {
   b.vida.geracao = Math.max(v.geracao, pai?.vida.geracao ?? 0) + 1;
   b.vida.endogamia = endogamia;
   b.vida.genes = herdar(v.genes, pai?.vida.genes ?? v.genes, ctx.rand, endogamia);
+  b.comunidade = mae.comunidade;
+  b.origem = mae.origem ? { ...mae.origem } : null;
   b.vida.infancia.moldada = false;
   b.personalidade = herdarPersonalidade(mae.personalidade, pai?.personalidade ?? mae.personalidade, ctx.rand);
   b.corpo.fome = 0.3; b.corpo.sede = 0.2; b.corpo.sono = 0.5; b.corpo.saude = lim(1 - endogamia * 0.6);
@@ -178,6 +180,7 @@ export function parto(mae: Agente, ctx: Contexto) {
   mudarRelacao(mae, b, { afeto: 0.8, confianca: 0.5 });
   if (pai && pai.vivo) mudarRelacao(pai, b, { afeto: 0.4 });
   mudarRelacao(b, mae, { afeto: 0.6, confianca: 0.6 });
+  if (pai && pai.vivo) mudarRelacao(b, pai, { afeto: 0.2, confianca: 0.4 });
   v.gravidaDesde = null; v.paiDoBebe = null; v.ultimoParto = ctx.hora;
   // o parto é arriscado
   mae.corpo.saude = lim(mae.corpo.saude - 0.1 - ctx.rand() * 0.25);
@@ -233,11 +236,13 @@ export function passoDaVida(a: Agente, ctx: Contexto): boolean {
   if (d >= VIDA.bebe) return false;
 
   // ---------- bebê ----------
-  const mae = ctx.agentes.find(x => x.id === v.mae);
-  const amamenta = mae && mae.vivo && Math.hypot(mae.x - a.x, mae.z - a.z) < 2.2;
-  if (amamenta) {
+  // mama com a mãe, ou com outra mulher que está amamentando e está junto dele
+  const ama = ctx.agentes.find(o => o.vivo && o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 2.2 && (o.id === v.mae || lactante(o, ctx)));
+  const amamenta = !!ama;
+  if (ama) {
     a.corpo.fome = lim(a.corpo.fome - h * 0.7); a.corpo.sede = lim(a.corpo.sede - h * 0.7);
-    mae!.corpo.fome = lim(mae!.corpo.fome + h * 0.03); mae!.corpo.sede = lim(mae!.corpo.sede + h * 0.03);
+    ama.corpo.fome = lim(ama.corpo.fome + h * 0.03); ama.corpo.sede = lim(ama.corpo.sede + h * 0.03);
+    if (ama.id !== v.mae && a.corpo.fome > 0.2) mudarRelacao(ama, a, { afeto: h * 0.05 });   // amamentar cria laço
   }
   const adultoPerto = ctx.agentes.some(o => o !== a && o.vivo && !ehCrianca(o, ctx.hora) && Math.hypot(o.x - a.x, o.z - a.z) < 6);
   v.chorando = a.corpo.fome > 0.5 || a.corpo.sede > 0.5 || a.corpo.frio > 0.35 || a.corpo.dor > 0.3 || !adultoPerto;
@@ -258,11 +263,31 @@ function moldarPelaInfancia(a: Agente, ctx: Contexto) {
   ev(a, ctx, 'deixou de ser criança');
 }
 
+// está amamentando um filho seu (ainda não desmamado)
+export function lactante(m: Agente, ctx: Contexto) {
+  if (m.sexo !== 'F' || !m.vivo) return false;
+  return ctx.agentes.some(b => b.vivo && b.vida.mae === m.id && idadeDias(b, ctx.hora) < VIDA.desmame);
+}
+// quem pode dar de mamar a este bebê: a mãe; sem ela, a mulher do grupo que amamenta e está mais perto
+function quemAmamenta(b: Agente, ctx: Contexto) {
+  const m = ctx.agentes.find(x => x.id === b.vida.mae);
+  if (m && m.vivo) return m;
+  let melhor: Agente | null = null, d = Infinity;
+  for (const o of ctx.agentes) {
+    if (o === b || !lactante(o, ctx) || o.comunidade !== b.comunidade) continue;
+    const di = Math.hypot(o.x - b.x, o.z - b.z);
+    if (di < d) { d = di; melhor = o; }
+  }
+  return melhor;
+}
+const orfao = (b: Agente, ctx: Contexto) => { const m = ctx.agentes.find(x => x.id === b.vida.mae); return !m || !m.vivo; };
+
 // ---------- Cuidar: carregar o bebê junto, voltar quando ele chora ----------
 // quem cuida: a mãe, e quem tem apego forte ao bebê
 export function bebesQueCuida(a: Agente, ctx: Contexto) {
   if (ehCrianca(a, ctx.hora)) return [];
-  return ctx.agentes.filter(b => b.vivo && b !== a && ehBebe(b, ctx.hora) && (b.vida.mae === a.id || relacao(a, b.id).afeto > 0.45));
+  return ctx.agentes.filter(b => b.vivo && b !== a && ehBebe(b, ctx.hora) && (b.vida.mae === a.id || lerRelacao(a, b.id).afeto > 0.45
+    || (orfao(b, ctx) && b.comunidade === a.comunidade && Math.hypot(b.x - a.x, b.z - a.z) < 60)));
 }
 // a mãe acordada e andando leva o bebê que está junto dela; para dormir, põe no chão ao lado.
 // Outro adulto só pega no colo um bebê que ficou sozinho chorando (ou cuja mãe morreu).
@@ -280,7 +305,7 @@ export function carregarSeFor(a: Agente, ctx: Contexto) {
   const b = bebesQueCuida(a, ctx).find(x => !x.vida.carregadoPor && Math.hypot(x.x - a.x, x.z - a.z) < 2.5 && podeCarregar(a, x, ctx));
   if (b) pegarBebe(a, b);
 }
-function maeViva(b: Agente, ctx: Contexto) { const m = ctx.agentes.find(x => x.id === b.vida.mae); return m && m.vivo ? m : null; }
+const maeViva = (b: Agente, ctx: Contexto) => quemAmamenta(b, ctx);
 function podeCarregar(a: Agente, b: Agente, ctx: Contexto) {
   const mae = maeViva(b, ctx);
   if (!mae || mae === a) return true;
@@ -305,7 +330,7 @@ export function vontadeDeCuidar(a: Agente, ctx: Contexto): { nota: number; alvo:
   for (const b of bebesQueCuida(a, ctx)) {
     const mae = maeViva(b, ctx);
     const d = Math.hypot(b.x - a.x, b.z - a.z);
-    const afeto = 0.6 + relacao(a, b.id).afeto;
+    const afeto = 0.6 + lerRelacao(a, b.id).afeto;
     // está no meu colo e precisa mamar: levar para a mãe
     if (b.vida.carregadoPor === a.id) {
       if (mae && mae !== a && precisaMamar(b)) {

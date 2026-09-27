@@ -9,13 +9,14 @@ import type { Agente, Objetivo } from './agente';
 import type { Contexto } from './contexto';
 import { emocaoDominante, descreverPersonalidade } from './emocoes';
 import { CAVERNAS } from '../../shared/mundo';
-import { conceitoNeutro, descreverRelacao, melhorPalavra, relacao } from './social';
+import { conceitoNeutro, descreverRelacao, lerRelacao, melhorPalavra } from './social';
+import { conhece } from './comunidades';
 import { bebesQueCuida, ehBebe, ehCrianca, idadeDias } from './vida';
 import { PALAVRAS_LIBERADAS, descreverMao, descreverTecnicas, sabe } from './tecnicas';
 
 // ---------- Contrato com o LLM ----------
 export const ACOES = ['comer', 'beber', 'dormir', 'descansar', 'abrigar', 'explorar', 'fugir', 'aproximar', 'cacar',
-  'experimentar', 'aquecer', 'fazer_fogo', 'lascar', 'construir', 'cavar', 'melhorar_caverna', 'cuidar'] as const;
+  'experimentar', 'aquecer', 'fazer_fogo', 'lascar', 'construir', 'cavar', 'melhorar_caverna', 'cuidar', 'partilhar'] as const;
 export type AcaoLLM = typeof ACOES[number] & Objetivo;
 export type TipoDeliberacao = 'plano' | 'evento' | 'reflexao';
 
@@ -144,6 +145,8 @@ function quemE(a: Agente, o: Agente, hora: number) {
   if (o.vida.mae === a.id || o.vida.pai === a.id) return ehBebe(o, hora) ? 'o bebê que é seu' : `${fe ? 'a filha' : 'o filho'} que você criou`;
   if (a.vida.mae === o.id) return 'a mulher que cuidou de você quando pequeno';
   if (a.vida.pai === o.id) return 'o homem que estava junto quando você era pequeno';
+  if (o.comunidade !== a.comunidade && lerRelacao(a, o.id).convivencia < 30)
+    return ehCrianca(o, hora) ? 'uma criança que não é dos seus' : fe ? 'uma mulher que não é dos seus' : 'um homem que não é dos seus';
   if (ehBebe(o, hora)) return 'um bebê';
   if (ehCrianca(o, hora)) return fe ? 'uma menina' : 'um menino';
   return fe ? 'uma mulher' : 'um homem';
@@ -195,6 +198,7 @@ export function montarSituacao(a: Agente, ctx: Contexto, tipo: TipoDeliberacao, 
   if (a.presaVista) possiveis.push('cacar');
   const bebes = bebesQueCuida(a, ctx);
   if (bebes.length) possiveis.push('cuidar');
+  if (a.tecnico.mao.some(id => ctx.objetos.find(o => o.id === id && (o.tipo === 'fruto' || o.tipo === 'carne')))) possiveis.push('partilhar');
   // mexer nas coisas é sempre possível; o resto, só para quem já descobriu como
   if (!ctx.noite) possiveis.push('experimentar');
   const fogoVisto = !!a.tecnico.fogoConhecido || ctx.objetos.some(o => o.tipo === 'fogo' && Math.hypot(o.x - a.x, o.z - a.z) < 60);
@@ -224,7 +228,7 @@ export function montarSituacao(a: Agente, ctx: Contexto, tipo: TipoDeliberacao, 
     outro: !outro ? 'não existe mais ninguém como você por perto' : dOutro < 10 ? 'a outra pessoa está perto de você'
       : dOutro < 40 ? 'a outra pessoa está por perto, mas não junto' : 'não sabe onde está a outra pessoa',
     sabe: descreverTecnicas(a), carrega: descreverMao(a, ctx), coisas,
-    relacoes: ctx.agentes.filter(o => o !== a && o.vivo).map(o => `${quemE(a, o, ctx.hora)}: você ${descreverRelacao(relacao(a, o.id))}`),
+    relacoes: ctx.agentes.filter(o => o !== a && o.vivo && conhece(a, o.id)).map(o => `${quemE(a, o, ctx.hora)}: você ${descreverRelacao(lerRelacao(a, o.id))}`),
     bebes: bebes.map(b => `${quemE(a, b, ctx.hora)} ${b.vida.chorando ? 'está chorando' : 'está quieto'}, ${ondeFica(a, b.x, b.z)}`),
     palavras: Object.keys(a.social?.lexico ?? {}).map(c => ({ c, p: melhorPalavra(a, c) })).filter(x => x.p)
       .map(x => `"${x.p}" quer dizer ${conceitoNeutro(x.c, NOME_NEUTRO, ctx.agentes, a)}`),

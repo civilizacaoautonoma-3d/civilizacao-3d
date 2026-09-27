@@ -18,14 +18,16 @@ import { TAREFAS, dormiuNaPilha, executarTarefa, novoEstadoTecnico, perceberObje
 import { fogosPerto } from './objetos';
 import { cavernaPreferida, conforto, dentroDeCaverna, dormiuNaCaverna, irParaCaverna, perceberCavernas, type CavernaConhecida } from './cavernas';
 import { CAVERNAS } from '../../shared/mundo';
-import { mudarRelacao, novoEstadoSocial, pulsoSocial, relacao, vontadeDeFicarPerto, type EstadoSocial } from './social';
+import { lerRelacao, mudarRelacao, novoEstadoSocial, pulsoSocial, vontadeDeFicarPerto, type EstadoSocial } from './social';
+import { conhece } from './comunidades';
+import { colherParaLevar, comerOQueTem, cortarParaLevar, partilhar, vontadeDePartilhar } from './partilha';
 import { bebesQueCuida, carregarSeFor, cuidar, ehBebe, ehCrianca, novaVida, passoDaVida, talvezInfeccionar, tentarConceber,
          velocidadeDaIdade, vontadeDeCuidar, type EstadoVida } from './vida';
 
 export type { Contexto } from './contexto';
 
 export type Objetivo = 'beber' | 'comer' | 'cacar' | 'fugir' | 'dormir' | 'descansar' | 'abrigar' | 'explorar' | 'aproximar'
-  | 'experimentar' | 'aquecer' | 'fazer_fogo' | 'lascar' | 'construir' | 'cavar' | 'melhorar_caverna' | 'cuidar';
+  | 'experimentar' | 'aquecer' | 'fazer_fogo' | 'lascar' | 'construir' | 'cavar' | 'melhorar_caverna' | 'cuidar' | 'partilhar';
 
 // lugares com recursos (o "mapa" de onde tem água e comida)
 export interface Lembranca {
@@ -80,6 +82,11 @@ export interface Agente {
   social: EstadoSocial;
   // Fase 12: idade, genes, gravidez, bebê, infância, velhice, doença
   vida: EstadoVida;
+  // Fase 13: a que grupo pertence (só para quem observa; o agente só sabe quem conhece)
+  comunidade: number;
+  origem: { x: number; z: number; chegou: number } | null;   // onde o grupo chegou ao vale (centro da área de casa)
+  parada?: { x: number; z: number; hora: number };            // onde estava parado (para perceber que travou)
+  saindoAte?: number;                                          // saindo de onde travou: não muda de ideia até essa hora
 }
 
 const RAIO = 0.35;
@@ -114,6 +121,8 @@ export function completarAgente(a: Partial<Agente> & Pick<Agente, 'corpo'>): Age
   a.deliberacao ??= novoEstadoDeliberativo();
   a.tecnico ??= novoEstadoTecnico();
   a.social ??= novoEstadoSocial();
+  a.comunidade ??= 1;
+  a.origem ??= null;
   a.vida ??= novaVida(-400 * 24, a.id ?? '');   // os fundadores chegam ao vale jovens adultos
   a.cavernas ??= {}; a.lar ??= null; a.indoCaverna ??= null; a.indoCavernaDesde ??= 0; a.cavernaFalhou ??= {};
   a.deliberacao.planoPedido ??= -1;
@@ -306,6 +315,7 @@ function aguaMaisProxima(a: Agente, ctx: Contexto) {
     const atacadoAli = a.mente.episodios.some(e => e.oQue === 'atacado' && ctx.hora - e.quando < 48 && Math.hypot(e.x - m.x, e.z - m.z) < 20);
     if (atacadoAli) c *= 4;
     c *= 1 + 2 * perigoDoLugar(a.mente, m.x, m.z);
+    c *= custoForaDeCasa(a, ctx, m.x, m.z);
     for (const p of a.percebidos)
       if (medoDaEspecie(a, p.especie, ctx) > 0.5 && Math.hypot(p.x - m.x, p.z - m.z) < 15) c *= 3;
     if (c < custo) { custo = c; melhor = m; }
@@ -338,6 +348,7 @@ function melhorComida(a: Agente, ctx: Contexto) {
       c = (Math.hypot(m.x - a.x, m.z - a.z) / m.forca) * 0.6;   // carne sacia mais que frutos
     } else continue;
     c *= 1 + 2 * perigoDoLugar(a.mente, m.x, m.z);              // evita onde acredita ser perigoso
+    c *= custoForaDeCasa(a, ctx, m.x, m.z);                     // prefere o que fica perto de casa
     // o plano do dia (ou uma decisão pensada) pesa na escolha
     const querido = lugarDesejado(a, 'comer', ctx.hora);
     if (querido && Math.hypot(querido.x - m.x, querido.z - m.z) < 12) c *= 0.5;
@@ -360,8 +371,29 @@ function arvoreMaisProxima(a: Agente, raio: number): Arvore | null {
 const alvoAleatorio = (a: Agente, ctx: Contexto, min = 10, max = 40) => pontoAleatorio(a.x, a.z, ctx.rand, min, max);
 
 // explorar com curiosidade: prefere onde ainda não conhece, evita onde acredita ser perigoso
+// área de casa: ninguém sai andando pelo vale inteiro; explora em volta de onde vive e vai se afastando aos poucos.
+// Fome e sede fortes empurram para longe (é quando os grupos acabam se encontrando).
+export const RAIO_CASA = { inicial: 50, porDia: 0.6 };
+export function areaDeCasa(a: Agente, hora: number) {
+  a.origem ??= { x: a.x, z: a.z, chegou: hora };
+  const lar = a.lar !== null ? CAVERNAS[a.lar] : null;
+  const centro = lar ?? a.origem;
+  const raio = RAIO_CASA.inicial + RAIO_CASA.porDia * Math.max(0, hora - a.origem.chegou) / 24;
+  return { x: centro.x, z: centro.z, raio };
+}
+
+// quanto custa ir até um ponto fora da área de casa (1 = dentro; cresce com a distância; some no aperto de verdade)
+function custoForaDeCasa(a: Agente, ctx: Contexto, x: number, z: number) {
+  const casa = areaDeCasa(a, ctx.hora);
+  const fora = Math.max(0, Math.hypot(x - casa.x, z - casa.z) - casa.raio);
+  const aperto = Math.max(a.corpo.fome, a.corpo.sede);
+  return 1 + (fora / 25) * (aperto < 0.7 ? 1 : Math.max(0, (0.95 - aperto) / 0.25));
+}
+
 export function alvoDeExploracao(a: Agente, ctx: Contexto): Ponto | null {
   let melhor: Ponto | null = null, nota = -Infinity;
+  const casa = areaDeCasa(a, ctx.hora);
+  const aperto = Math.max(a.corpo.fome, a.corpo.sede);   // com fome ou sede, vai mais longe
   for (let k = 0; k < 8; k++) {
     const p = pontoAleatorio(a.x, a.z, ctx.rand, 15, 50);
     if (!p) continue;
@@ -372,7 +404,8 @@ export function alvoDeExploracao(a: Agente, ctx: Contexto): Ponto | null {
     }
     const querido = lugarDesejado(a, 'explorar', ctx.hora);
     const n = novas / 25 - 1.5 * perigoDoLugar(a.mente, p.x, p.z) + ctx.rand() * 0.3
-      - (lugarEvitado(a, p.x, p.z, ctx.hora) ? 1 : 0) + (querido ? 0.8 * Math.exp(-Math.hypot(querido.x - p.x, querido.z - p.z) / 30) : 0);
+      - (lugarEvitado(a, p.x, p.z, ctx.hora) ? 1 : 0) + (querido ? 0.8 * Math.exp(-Math.hypot(querido.x - p.x, querido.z - p.z) / 30) : 0)
+      - Math.max(0, Math.hypot(p.x - casa.x, p.z - casa.z) - casa.raio) / 5 * (aperto < 0.7 ? 1 : Math.max(0, (0.95 - aperto) / 0.25));   // só no aperto de verdade vai para longe
     if (n > nota) { nota = n; melhor = p; }
   }
   return melhor;
@@ -491,15 +524,15 @@ export function ferirAgente(a: Agente, dano: number, agressor: Animal, ctx: Cont
 
 // com quem quer estar: a criança quer a mãe (ou o pai); os outros, quem mais gostam e com quem formam par
 export function companheiroPreferido(a: Agente, ctx: Contexto): Agente | undefined {
-  const vivos = ctx.agentes.filter(o => o !== a && o.vivo && !ehBebe(o, ctx.hora));
+  const vivos = ctx.agentes.filter(o => o !== a && o.vivo && !ehBebe(o, ctx.hora) && conhece(a, o.id));
   if (ehCrianca(a, ctx.hora)) {
     const pais = vivos.filter(o => o.id === a.vida.mae || o.id === a.vida.pai);
     if (pais.length) return pais.sort((p, q) => Math.hypot(p.x - a.x, p.z - a.z) - Math.hypot(q.x - a.x, q.z - a.z))[0];
   }
   let melhor: Agente | undefined, nota = -Infinity;
   for (const o of vivos) {
-    const r = relacao(a, o.id);
-    const n = r.afeto + (r.atracao ?? 0) - r.ressentimento - Math.hypot(o.x - a.x, o.z - a.z) / 400;
+    const r = lerRelacao(a, o.id);
+    const n = r.afeto + (r.atracao ?? 0) - r.ressentimento - r.medo - Math.hypot(o.x - a.x, o.z - a.z) / 400;
     if (n > nota) { nota = n; melhor = o; }
   }
   return melhor;
@@ -507,6 +540,7 @@ export function companheiroPreferido(a: Agente, ctx: Contexto): Agente | undefin
 
 // ---------- Decisão por utilidade ----------
 function decidir(a: Agente, ctx: Contexto) {
+  if ((a.saindoAte ?? -1) > ctx.hora && !a.ameaca) return;   // saindo de onde travou
   const c = a.corpo;
   const temComida = melhorComida(a, ctx) !== null;
   // a própria experiência diz quanto vale a pena correr atrás de um animal
@@ -517,6 +551,7 @@ function decidir(a: Agente, ctx: Contexto) {
   // um bicho que ataca vence tudo; um bicho por perto assusta, mas sede ou fome extremas falam mais alto
   const bicho = a.ameaca ? ctx.porId.get(a.ameaca.id) : undefined;
   const atacandoMe = !!bicho && ehAnimal(bicho) && bicho.alvoId === a.id && (bicho.objetivo === 'cacar' || bicho.objetivo === 'enfrentar');
+  const perigoAcordado = !!bicho && ehAnimal(bicho) && bicho.vivo && bicho.acao !== 'dormindo' && Math.hypot(bicho.x - a.x, bicho.z - a.z) < 20;
   // superstição: acredita que este tempo (ou a noite) traz perigo
   const receio = Math.max(crenca(a.mente, `contexto:${ctx.clima}`), ctx.noite ? crenca(a.mente, 'contexto:noite') : 0);
   // emoções, humores e personalidade pesam em tudo
@@ -529,7 +564,8 @@ function decidir(a: Agente, ctx: Contexto) {
     comer: Math.pow(c.fome, 1.4) * (temComida ? 1 : 0.7) + (c.fome > 0.95 ? 0.3 : 0) + (c.fome > 0.4 ? 0.12 * P.conscienciosidade : 0),
     cacar: a.presaVista && c.energia > 0.3 ? Math.pow(c.fome, 1.4) * (0.4 + 0.8 * taxaCaca) * (0.7 + 0.4 * P.coragem + 0.2 * P.abertura) : 0,
     // de dia só cochila se estiver muito cansado; à noite o sono pesa mais
-    dormir: ((ctx.noite ? c.sono * 1.2 : c.sono > 0.85 ? c.sono * 0.6 : 0) + (c.sono > 0.9 ? 0.5 : 0)) * (urgente ? 0.2 : 1),
+    // com um bicho perigoso por perto, o medo não deixa dormir
+    dormir: ((ctx.noite ? c.sono * 1.2 : c.sono > 0.85 ? c.sono * 0.6 : 0) + (c.sono > 0.9 ? 0.5 : 0)) * (urgente ? 0.2 : 1) * (perigoAcordado ? 0.15 : 1),
     // a tristeza pesa no corpo: vontade de ficar parado
     descansar: Math.pow(1 - c.energia, 2) * 1.2 + H.tristeza * 0.25 + E.tristeza * 0.15,
     abrigar: c.frio * 0.9 + (ctx.chuva > 0.3 && !a.abrigado ? 0.2 : 0) + receio * 0.6 + (ctx.noite ? H.ansiedade * 0.2 : 0),
@@ -543,6 +579,8 @@ function decidir(a: Agente, ctx: Contexto) {
     experimentar: 0, aquecer: 0, fazer_fogo: 0, lascar: 0, construir: 0, cavar: 0, melhorar_caverna: 0,
     // um bebê que chora ou ficou sozinho chama quem se apegou a ele
     cuidar: vontadeDeCuidar(a, ctx).nota * 1.6,
+    // tem comida na mão e alguém querido está com fome
+    partilhar: vontadeDePartilhar(a, ctx) * 1.5,
   };
   // o que ele sabe fazer com as coisas (e a curiosidade de mexer nelas)
   for (const [k, v] of Object.entries(utilidadesTecnicas(a, ctx, temComida)) as [Objetivo, number][]) notas[k] = v;
@@ -628,7 +666,7 @@ function comerCarne(a: Agente, ctx: Contexto) {
     a.jaPassouMal = true;
   } else { episodio(a, ctx, 'comeu', 'carne', 0.4, 0.3); sinta(a, 'alegria', 0.2 + c.fome * 0.5); }
   if (mem) { mem.frutos = k.porcoes; mem.quando = ctx.hora; }
-  if (c.fome < 0.1) { a.objetivo = null; a.alvoCarne = -1; }
+  if (c.fome < 0.1) { cortarParaLevar(a, ctx, k); a.objetivo = null; a.alvoCarne = -1; }
 }
 
 function executar(a: Agente, ctx: Contexto) {
@@ -777,7 +815,7 @@ function executar(a: Agente, ctx: Contexto) {
         episodio(a, ctx, 'comeu', `arbusto:${a.alvoRef}`, 0.3, 0.25);   // doce: reforça a volta a este arbusto
         sinta(a, 'alegria', 0.15 + c.fome * 0.5);
         if (mem) { mem.frutos = ctx.frutos[a.alvoRef]; mem.quando = ctx.hora; }
-        if (c.fome < 0.1) { a.objetivo = null; a.alvoRef = -1; }
+        if (c.fome < 0.1) { colherParaLevar(a, ctx, a.alvoRef); a.objetivo = null; a.alvoRef = -1; }
       } else {
         // esperava frutos e não havia: decepção (a expectativa desse arbusto cai)
         if (mem && mem.frutos > 0) {
@@ -844,6 +882,13 @@ function executar(a: Agente, ctx: Contexto) {
     case 'experimentar': case 'aquecer': case 'fazer_fogo': case 'lascar': case 'construir': case 'cavar': case 'melhorar_caverna':
       executarTarefa(a, ctx, a.objetivo as Tarefa);
       return;
+
+    case 'partilhar': {
+      const intencao = partilhar(a, ctx);
+      if (intencao === null) { a.objetivo = null; return; }
+      a.intencao = intencao;
+      return;
+    }
 
     case 'cuidar': {
       const intencao = cuidar(a, ctx, (p, perto) => irParaPonto(a, ctx, p, perto));
@@ -921,6 +966,22 @@ function executar(a: Agente, ctx: Contexto) {
   }
 }
 
+// rede de segurança: querendo ir a algum lugar, mas sem sair do mesmo ponto há mais de hora e meia — desiste daquele
+// alvo e sai para outro lado (a água, uma pedra ou o mapa mental errado podem prender alguém num canto)
+function destravar(a: Agente, ctx: Contexto) {
+  const p = a.parada;
+  if (!p || Math.hypot(a.x - p.x, a.z - p.z) > 3) { a.parada = { x: a.x, z: a.z, hora: ctx.hora }; return; }
+  const querAndar = a.objetivo === 'comer' || a.objetivo === 'beber' || a.objetivo === 'explorar' || a.objetivo === 'partilhar'
+    || (a.objetivo === 'abrigar' && !a.abrigado);
+  if (!querAndar || a.acao === 'comendo' || ctx.hora - p.hora < 1.5) return;
+  if (a.alvoRef >= 0) desistirDeAlcancar(a, 'comida', a.alvoRef, ctx);
+  if (a.alvoCarne >= 0) desistirDeAlcancar(a, 'carne', a.alvoCarne, ctx);
+  a.alvoRef = -1; a.alvoCarne = -1; a.rota = null; a.desvio = false;
+  const saida = alvoAleatorio(a, ctx, 10, 30);
+  if (saida) { definirDestino(a, ctx, saida); a.objetivo = 'explorar'; a.intencao = 'procurando outro caminho'; a.saindoAte = ctx.hora + 0.4; }
+  a.parada = { x: a.x, z: a.z, hora: ctx.hora };
+}
+
 // ---------- Passo de vida ----------
 export function atualizarAgente(a: Agente, ctx: Contexto) {
   if (!a.vivo) return;
@@ -954,7 +1015,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
     // quem viu a morte guarda isso para sempre (e pode ligar a coisas que não têm nada a ver)
     for (const o of ctx.agentes) {
       if (o === a || !o.vivo || ehBebe(o, ctx.hora)) continue;
-      const laco = relacao(o, a.id).afeto;
+      const laco = lerRelacao(o, a.id).afeto;
       if (Math.hypot(o.x - a.x, o.z - a.z) > 30 && !(laco > 0.4 && Math.hypot(o.x - a.x, o.z - a.z) < 80)) continue;
       episodio(o, ctx, 'viu_morte', `agente:${a.id}`, -1, 1);
       sentir(o.sentimentos, o.personalidade, 'tristeza', 1);
@@ -1008,6 +1069,8 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
     a.abrigado = arvoreMaisProxima(a, 2.2) !== null || pilhaAbrigo(a, ctx) || dentroDeCaverna(a);
     a.acompanhado = ctx.agentes.some(o => o !== a && o.vivo && Math.hypot(o.x - a.x, o.z - a.z) < 1.5);
     pulsoSocial(a, ctx, 10 * ctx.horas);
+    if (comerOQueTem(a, ctx)) return;
+    destravar(a, ctx);
     decidir(a, ctx);
   }
 
