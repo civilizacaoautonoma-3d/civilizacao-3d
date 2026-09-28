@@ -38,6 +38,7 @@ function htmlAgente(e: EntidadeRede) {
     ${n.dor > 0.01 ? barra('Dor', n.dor, '#d65c5c') : ''}
     ${e.casa ? `<p class="memoria">Casa: ${e.casa}</p>` : e.cavernas ? `<p class="memoria">Conhece ${e.cavernas} caverna(s)</p>` : ''}
     ${e.fala ? `<p class="pensamento">Disse: <b>"${e.fala.texto}"</b> <small>(${e.fala.traducao})</small></p>` : ''}
+    ${e.valores && Object.values(e.valores).some(v => Math.abs(v) > 0.05) ? `<p class="titulo">Valoriza</p>${Object.entries(e.valores).filter(([, v]) => Math.abs(v) > 0.05).map(([k, v]) => barra(({ partilhar: 'Partilhar', cautela: 'Cautela', cuidado: 'Cuidado', abertura: 'Abertura' } as Record<string, string>)[k] ?? k, Math.abs(v), v >= 0 ? '#6fc46a' : '#d65c5c')).join('')}` : ''}
     ${e.relacoes?.length ? `<p class="titulo">Com os outros</p><ul class="lista">${e.relacoes.map(r => `<li>${r.nome}: ${r.descricao}</li>`).join('')}</ul>` : ''}
     ${e.palavras?.length ? `<p class="titulo">Palavras</p><ul class="lista">${e.palavras.map(p => `<li><b>"${p.palavra}"</b> = ${p.significado}${p.comum ? ' ✔' : ''} <small>${Math.round(p.forca * 100)}%</small></li>`).join('')}</ul>` : ''}
     ${e.carrega?.length ? `<p class="memoria">Nas mãos: ${e.carrega.join(' e ')}</p>` : ''}

@@ -54,6 +54,8 @@ export interface EntidadeRede {
   // Fase 13
   comunidade: number;          // 1, 2… (só quem observa sabe)
   pele: number;                // tom de pele herdado (0 claro … 1 escuro)
+  // Fase 14
+  valores: Record<string, number>;   // partilhar, cautela, cuidado, abertura (-1 … 1)
 }
 
 export interface AnimalRede {
@@ -85,6 +87,12 @@ export interface MsgEstado {
   tipo: 'estado'; tick: number; msMundo: number; velocidade: number;
   entidades: EntidadeRede[]; animais: AnimalRede[]; carcacas: CarcacaRede[]; frutos: number[];
   objetos?: ObjetoRede[];   // só vem quando algo mudou (ou de tempos em tempos); senão vale a última lista
+  cultura?: CulturaRede;    // de tempos em tempos: a cultura de cada grupo e quanto divergem
+}
+export interface CulturaRede {
+  grupos: { numero: number; vivos: number; palavras: Record<string, string>; valores: Record<string, number>; tecnicas: string[]; crencas: string[] }[];
+  divergencia: { lingua: number; valores: number; tecnicas: number; crencas: number } | null;
+  traducao: Record<string, string>;   // conceito -> em português (para quem observa)
 }
 export type MensagemServidor = MsgBoasVindas | MsgEstado;
 

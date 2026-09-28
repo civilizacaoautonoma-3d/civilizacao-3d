@@ -50,7 +50,8 @@ export function observar(mapa: number[], x: number, z: number, alcance: number, 
       if (Math.abs(ang) > meioCone) continue;
     }
     if (mapa[c] === DESCONHECIDO) novas++;
-    if (mapa[c] !== AGUA) mapa[c] = VERDADE[c];   // a água que aprendeu esbarrando não se desfaz com uma olhada
+    // a água que aprendeu esbarrando não se desfaz com uma olhada de longe; bem de perto, vê o que é de verdade
+    if (mapa[c] !== AGUA || d <= CELULA_MAPA * 1.6) mapa[c] = VERDADE[c];
   }
   return novas;
 }

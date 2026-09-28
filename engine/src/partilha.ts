@@ -10,6 +10,7 @@ import { ehBebe, ehCrianca } from './vida';
 import { largar, pegar, sabe, segurando } from './tecnicas';
 import type { Objeto } from './objetos';
 import type { Carcaca } from './ecologia';
+import { aoDarComida, aoPegarComidaAlheia, aoReceberComida, observarPartilha } from './cultura';
 
 export const FRUTO_DURA = 72;   // horas até o fruto colhido apodrecer
 const ehComida = (o: Objeto) => o.tipo === 'fruto' || o.tipo === 'carne';
@@ -78,7 +79,11 @@ export function comerOQueTem(a: Agente, ctx: Contexto): boolean {
   if (noChao) {
     comer(a, noChao, ctx);
     const quem = noChao.deixadoPor ? ctx.agentes.find(x => x.id === noChao.deixadoPor) : undefined;
-    if (quem && quem !== a) {
+    // era para outro: quem deixou e quem ia receber se revoltam
+    if (noChao.deixadoPara && noChao.deixadoPara !== a.id && quem !== a)
+      aoPegarComidaAlheia(a, quem, ctx.agentes.find(x => x.id === noChao.deixadoPara), ctx);
+    else if (quem && quem !== a) {
+      aoReceberComida(a, ctx, quem); aoDarComida(quem, ctx); observarPartilha(ctx, quem, true);
       // recebeu de alguém: gratidão
       mudarRelacao(a, quem, { afeto: 0.08, confianca: 0.03, divida: 0.1 });
       mudarRelacao(quem, a, { afeto: 0.02 });
@@ -104,7 +109,7 @@ export function partilhar(a: Agente, ctx: Contexto): string | null {
   if (!alvo || !comida) return null;
   if (!irParaPonto(a, ctx, alvo, 1.6)) return `levando ${comida.tipo === 'fruto' ? 'um fruto' : 'carne'} para ${alvo.nome}`;
   largar(a, comida, ctx);
-  comida.x = alvo.x + 0.3; comida.z = alvo.z + 0.3; comida.deixadoPor = a.id;
+  comida.x = alvo.x + 0.3; comida.z = alvo.z + 0.3; comida.deixadoPor = a.id; comida.deixadoPara = alvo.id;
   a.rotacao = Math.atan2(alvo.x - a.x, alvo.z - a.z);
   a.social.deuComida = (a.social.deuComida ?? 0) + 1;
   if (a.social.deuComida <= 3) ev(a, ctx, `deixou ${comida.tipo === 'fruto' ? 'um fruto' : 'um pedaço de carne'} junto de ${alvo.nome}, que estava com fome`);

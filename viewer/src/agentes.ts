@@ -14,7 +14,7 @@ export function iniciarAgentes(s: THREE.Scene) { cena = s; }
 // ---------- Símbolo da emoção acima da cabeça ----------
 const SIMBOLO: Record<string, string> = {
   alegria: '😊', confianca: '🙂', medo: '😨', surpresa: '😲', tristeza: '😢', nojo: '🤢', raiva: '😠', antecipacao: '🤔',
-  'alívio': '😮‍💨', orgulho: '😤', 'frustração': '😣', 'decepção': '😞', luto: '😭',
+  'alívio': '😮‍💨', orgulho: '😤', 'frustração': '😣', 'decepção': '😞', luto: '😭', culpa: '😔', 'indignação': '😠',
 };
 const texturas = new Map<string, THREE.CanvasTexture>();
 function texturaDe(simbolo: string) {

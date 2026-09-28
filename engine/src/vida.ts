@@ -9,6 +9,7 @@ import type { Contexto } from './contexto';
 import type { Agente } from './agente';
 import { completarAgente, ev, novoAgente, sinta } from './agente';
 import { lerRelacao, mudarRelacao, relacao } from './social';
+import { aoCuidar, observarCuidadoDeOrfao } from './cultura';
 import { novaPersonalidade, type Personalidade } from './emocoes';
 
 // idades em dias do mundo
@@ -243,6 +244,7 @@ export function passoDaVida(a: Agente, ctx: Contexto): boolean {
     a.corpo.fome = lim(a.corpo.fome - h * 0.7); a.corpo.sede = lim(a.corpo.sede - h * 0.7);
     ama.corpo.fome = lim(ama.corpo.fome + h * 0.03); ama.corpo.sede = lim(ama.corpo.sede + h * 0.03);
     if (ama.id !== v.mae && a.corpo.fome > 0.2) mudarRelacao(ama, a, { afeto: h * 0.05 });   // amamentar cria laço
+    aoCuidar(ama, ctx, h * 0.3);   // amamentar forma o valor de cuidar dos pequenos
   }
   const adultoPerto = ctx.agentes.some(o => o !== a && o.vivo && !ehCrianca(o, ctx.hora) && Math.hypot(o.x - a.x, o.z - a.z) < 6);
   v.chorando = a.corpo.fome > 0.5 || a.corpo.sede > 0.5 || a.corpo.frio > 0.35 || a.corpo.dor > 0.3 || !adultoPerto;
@@ -369,8 +371,12 @@ export function cuidar(a: Agente, ctx: Contexto, irPara: (p: { x: number; z: num
     if (outro) outro.vida.carregando = null;
     b.vida.carregadoPor = null;
   }
+  aoCuidar(a, ctx, 0.1);
   if (b.vida.mae === a.id && precisaMamar(b)) { b.x = a.x + 0.3; b.z = a.z + 0.3; return `amamentando ${b.nome}`; }
-  if (!a.vida.carregando && podeCarregar(a, b, ctx)) pegarBebe(a, b);
+  if (!a.vida.carregando && podeCarregar(a, b, ctx)) {
+    pegarBebe(a, b);
+    if (orfao(b, ctx)) observarCuidadoDeOrfao(ctx, a);
+  }
   return null;
 }
 

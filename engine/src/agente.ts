@@ -20,6 +20,7 @@ import { cavernaPreferida, conforto, dentroDeCaverna, dormiuNaCaverna, irParaCav
 import { CAVERNAS } from '../../shared/mundo';
 import { lerRelacao, mudarRelacao, novoEstadoSocial, pulsoSocial, vontadeDeFicarPerto, type EstadoSocial } from './social';
 import { conhece } from './comunidades';
+import { aoSerAtacado, aoVerMorte, novaCultura, pesoDoValor, talvezCulpa, type EstadoCultural } from './cultura';
 import { colherParaLevar, comerOQueTem, cortarParaLevar, partilhar, vontadeDePartilhar } from './partilha';
 import { bebesQueCuida, carregarSeFor, cuidar, ehBebe, ehCrianca, novaVida, passoDaVida, talvezInfeccionar, tentarConceber,
          velocidadeDaIdade, vontadeDeCuidar, type EstadoVida } from './vida';
@@ -87,6 +88,8 @@ export interface Agente {
   origem: { x: number; z: number; chegou: number } | null;   // onde o grupo chegou ao vale (centro da área de casa)
   parada?: { x: number; z: number; hora: number };            // onde estava parado (para perceber que travou)
   saindoAte?: number;                                          // saindo de onde travou: não muda de ideia até essa hora
+  // Fase 14: valores, normas percebidas, emoções morais
+  cultura: EstadoCultural;
 }
 
 const RAIO = 0.35;
@@ -122,6 +125,7 @@ export function completarAgente(a: Partial<Agente> & Pick<Agente, 'corpo'>): Age
   a.tecnico ??= novoEstadoTecnico();
   a.social ??= novoEstadoSocial();
   a.comunidade ??= 1;
+  a.cultura ??= novaCultura();
   a.origem ??= null;
   a.vida ??= novaVida(-400 * 24, a.id ?? '');   // os fundadores chegam ao vale jovens adultos
   a.cavernas ??= {}; a.lar ??= null; a.indoCaverna ??= null; a.indoCavernaDesde ??= 0; a.cavernaFalhou ??= {};
@@ -256,7 +260,7 @@ function perceber(a: Agente, ctx: Contexto) {
     const o = ctx.porId.get(p.id) as Animal;
     const medo = medoDaEspecie(a, p.especie, ctx);
     // coragem encurta a distância do susto; ansiedade acumulada deixa em alerta
-    const temperamento = (1.3 - 0.6 * a.personalidade.coragem) * (1 + 0.4 * a.sentimentos.humor.ansiedade);
+    const temperamento = (1.3 - 0.6 * a.personalidade.coragem) * (1 + 0.4 * a.sentimentos.humor.ansiedade) * (1 + 0.25 * a.cultura.valores.cautela);
     const perigo = raioDaSituacao(p, o, a, alcance, ctx) * medo * (p.ouvido ? 0.7 : 1) * temperamento;
     if (p.d < perigo) { if (p.d < dAmeaca) { dAmeaca = p.d; ameaca = p; } continue; }
     if (p.ouvido) { if (medo > 0.3) barulho = p; continue; }
@@ -501,6 +505,7 @@ export function ferirAgente(a: Agente, dano: number, agressor: Animal, ctx: Cont
   a.corpo.saude = Math.max(0, a.corpo.saude - dano);
   a.corpo.dor = Math.min(1, a.corpo.dor + 0.5);
   talvezInfeccionar(a, ctx);
+  aoSerAtacado(a, ctx);
   const dormia = a.acao === 'dormindo';
   if (dormia) a.acao = 'parado';
   a.ameaca = { id: agressor.id, x: agressor.x, z: agressor.z };
@@ -571,16 +576,16 @@ function decidir(a: Agente, ctx: Contexto) {
     abrigar: c.frio * 0.9 + (ctx.chuva > 0.3 && !a.abrigado ? 0.2 : 0) + receio * 0.6 + (ctx.noite ? H.ansiedade * 0.2 : 0),
     // explorar: curiosidade e tédio empurram; tristeza, medo e ansiedade seguram
     explorar: (0.2 + ctx.rand() * 0.1) * (1 - receio * 0.7) * (0.6 + 0.8 * P.abertura) * (1 + H.tedio)
-      * (1 - 0.6 * H.tristeza) * (1 - 0.4 * H.ansiedade) * (1 + 0.3 * E.alegria),
+      * (1 - 0.6 * H.tristeza) * (1 - 0.4 * H.ansiedade) * (1 + 0.3 * E.alegria) * (1 - 0.25 * Math.max(0, a.cultura.valores.cautela)),
     // solidão: procurar companhia (mais forte nos sociáveis) — um impulso, não uma regra social
     // o laço pesa: de quem gosta, sente mais falta; de quem guarda mágoa ou medo, menos; ser chamado puxa
     aproximar: outro && distancia(a, outro) > 4
       ? (() => { const v = vontadeDeFicarPerto(a, outro, ctx.hora); return H.solidao * (0.3 + 0.7 * P.extroversao) * 0.8 * v.fator + v.chamado; })() : 0,
     experimentar: 0, aquecer: 0, fazer_fogo: 0, lascar: 0, construir: 0, cavar: 0, melhorar_caverna: 0,
     // um bebê que chora ou ficou sozinho chama quem se apegou a ele
-    cuidar: vontadeDeCuidar(a, ctx).nota * 1.6,
+    cuidar: vontadeDeCuidar(a, ctx).nota * 1.6 * pesoDoValor(a, 'cuidado'),
     // tem comida na mão e alguém querido está com fome
-    partilhar: vontadeDePartilhar(a, ctx) * 1.5,
+    partilhar: vontadeDePartilhar(a, ctx) * 1.5 * pesoDoValor(a, 'partilhar') * (0.7 + 0.6 * a.cultura.normas.partilhar),
   };
   // o que ele sabe fazer com as coisas (e a curiosidade de mexer nelas)
   for (const [k, v] of Object.entries(utilidadesTecnicas(a, ctx, temComida)) as [Objetivo, number][]) notas[k] = v;
@@ -977,8 +982,19 @@ function destravar(a: Agente, ctx: Contexto) {
   if (a.alvoRef >= 0) desistirDeAlcancar(a, 'comida', a.alvoRef, ctx);
   if (a.alvoCarne >= 0) desistirDeAlcancar(a, 'carne', a.alvoCarne, ctx);
   a.alvoRef = -1; a.alvoCarne = -1; a.rota = null; a.desvio = false;
-  const saida = alvoAleatorio(a, ctx, 10, 30);
-  if (saida) { definirDestino(a, ctx, saida); a.objetivo = 'explorar'; a.intencao = 'procurando outro caminho'; a.saindoAte = ctx.hora + 0.4; }
+  // um ponto para onde dá para ir em linha reta por terra seca (sem depender do mapa mental, que pode estar errado)
+  let saida: Ponto | null = null;
+  for (let t = 0; t < 24 && !saida; t++) {
+    const ang = ctx.rand() * Math.PI * 2, d = 8 + ctx.rand() * 22;
+    const p = { x: a.x + Math.sin(ang) * d, z: a.z + Math.cos(ang) * d };
+    let seco = true;
+    for (let s = 1; s <= d && seco; s += 1) if (!terraSeca(a.x + Math.sin(ang) * s, a.z + Math.cos(ang) * s)) seco = false;
+    if (seco) saida = p;
+  }
+  if (saida) {
+    definirDestino(a, ctx, saida); a.rota = [saida];
+    a.objetivo = 'explorar'; a.intencao = 'procurando outro caminho'; a.saindoAte = ctx.hora + 0.4;
+  }
   a.parada = { x: a.x, z: a.z, hora: ctx.hora };
 }
 
@@ -1018,6 +1034,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
       const laco = lerRelacao(o, a.id).afeto;
       if (Math.hypot(o.x - a.x, o.z - a.z) > 30 && !(laco > 0.4 && Math.hypot(o.x - a.x, o.z - a.z) < 80)) continue;
       episodio(o, ctx, 'viu_morte', `agente:${a.id}`, -1, 1);
+      aoVerMorte(o, ctx, a.causaMorte === 'ferimentos');
       sentir(o.sentimentos, o.personalidade, 'tristeza', 1);
       o.sentimentos.humor.tristeza = Math.min(1, o.sentimentos.humor.tristeza + 0.5);
       viver(o.sentimentos, 'luto', ctx.hora, 72);
@@ -1070,6 +1087,7 @@ export function atualizarAgente(a: Agente, ctx: Contexto) {
     a.acompanhado = ctx.agentes.some(o => o !== a && o.vivo && Math.hypot(o.x - a.x, o.z - a.z) < 1.5);
     pulsoSocial(a, ctx, 10 * ctx.horas);
     if (comerOQueTem(a, ctx)) return;
+    talvezCulpa(a, ctx, a.tecnico.mao.some(id => ctx.objetos.find(o => o.id === id && (o.tipo === 'fruto' || o.tipo === 'carne'))));
     destravar(a, ctx);
     decidir(a, ctx);
   }

@@ -12,6 +12,7 @@ import { CAVERNAS } from '../../shared/mundo';
 import { conceitoNeutro, descreverRelacao, lerRelacao, melhorPalavra } from './social';
 import { conhece } from './comunidades';
 import { bebesQueCuida, ehBebe, ehCrianca, idadeDias } from './vida';
+import { descreverValores } from './cultura';
 import { PALAVRAS_LIBERADAS, descreverMao, descreverTecnicas, sabe } from './tecnicas';
 
 // ---------- Contrato com o LLM ----------
@@ -50,6 +51,8 @@ export interface Situacao {
   coisas: string[];     // coisas soltas que vê por perto
   relacoes: string[];   // o que sente pelos outros (Fase 11)
   bebes?: string[];     // os bebês de quem cuida (Fase 12)
+  valores?: string[];   // o que aprendeu a valorizar (Fase 14)
+  costumes?: string[];  // o que percebe que os seus costumam fazer
   palavras: string[];   // os sons que usa e o que querem dizer para ele
   ouviu: string[];      // o que ouviu há pouco
   acoesPossiveis: AcaoLLM[];
@@ -229,6 +232,9 @@ export function montarSituacao(a: Agente, ctx: Contexto, tipo: TipoDeliberacao, 
       : dOutro < 40 ? 'a outra pessoa está por perto, mas não junto' : 'não sabe onde está a outra pessoa',
     sabe: descreverTecnicas(a), carrega: descreverMao(a, ctx), coisas,
     relacoes: ctx.agentes.filter(o => o !== a && o.vivo && conhece(a, o.id)).map(o => `${quemE(a, o, ctx.hora)}: você ${descreverRelacao(lerRelacao(a, o.id))}`),
+    valores: descreverValores(a),
+    costumes: [a.cultura.normas.partilhar > 0.6 ? 'os seus costumam deixar comida para quem tem fome' : '',
+      a.cultura.normas.cuidarDeOrfaos > 0.6 ? 'os seus cuidam dos pequenos que perderam a mãe' : ''].filter(Boolean),
     bebes: bebes.map(b => `${quemE(a, b, ctx.hora)} ${b.vida.chorando ? 'está chorando' : 'está quieto'}, ${ondeFica(a, b.x, b.z)}`),
     palavras: Object.keys(a.social?.lexico ?? {}).map(c => ({ c, p: melhorPalavra(a, c) })).filter(x => x.p)
       .map(x => `"${x.p}" quer dizer ${conceitoNeutro(x.c, NOME_NEUTRO, ctx.agentes, a)}`),

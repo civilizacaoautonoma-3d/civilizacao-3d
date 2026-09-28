@@ -46,6 +46,8 @@ export function descreverSituacao(s: Situacao) {
     lista('Coisas soltas por perto', s.coisas ?? []),
     lista('O que sente pelos outros', s.relacoes ?? []),
     lista('Bebês de quem você cuida', s.bebes ?? []),
+    lista('O que você aprendeu a valorizar', s.valores ?? []),
+    lista('O que os seus costumam fazer', s.costumes ?? []),
     lista('Sons que você usa', s.palavras ?? []),
     lista('O que ouviu há pouco', s.ouviu ?? []),
     `Ações possíveis agora: ${s.acoesPossiveis.join(', ')}.`,

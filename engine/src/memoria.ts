@@ -31,7 +31,7 @@ export interface Crenca {
   chave: string;          // 'perigo:especie:lobo', 'contexto:Neblina', 'lugar:1234', 'aversao:carne-podre'
   enunciado: string;
   certeza: number;        // 0 … 1
-  origem: 'experiência';
+  origem: 'experiência' | 'transmitida';
   transmitidaPor: string | null;
   desde: number;
 }

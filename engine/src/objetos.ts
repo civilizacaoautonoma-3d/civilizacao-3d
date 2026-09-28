@@ -16,6 +16,7 @@ export interface Objeto {
   desde?: number;                    // carne: hora em que o bicho morreu
   especie?: Especie;                 // carne: de que bicho
   deixadoPor?: string;               // comida deixada por alguém junto de outro (partilha)
+  deixadoPara?: string;              // … e para quem
 }
 
 export interface Descoberta {

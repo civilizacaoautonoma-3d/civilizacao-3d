@@ -12,6 +12,7 @@ import { animais, iniciarAnimais, aplicarAnimais, animarAnimais, contarAnimais }
 import { atualizarPainel } from './painel';
 import { iniciarObjetos, aplicarObjetos, animarObjetos } from './objetos';
 import { criarCavernas } from './cavernas';
+import { aplicarCultura, alternarCultura } from './cultura';
 import { ehToque, toque, iniciarToque } from './toque';
 
 const EYE_HEIGHT = 1.7;
@@ -221,6 +222,7 @@ function conectar() {
       aplicarAnimais(msg.animais ?? [], msg.carcacas ?? []);
       atualizarFrutos(msg.frutos);
       aplicarObjetos(msg.objetos);
+      aplicarCultura(msg.cultura);
     }
   };
 }
@@ -234,7 +236,7 @@ overlay.innerHTML = `<h1>PROJETO CIVILIZAÇÃO 3D</h1>
   <p>${ehToque ? 'Toque para entrar' : 'Clique para entrar'}</p>
   <p>${ehToque
     ? 'Joystick à esquerda para andar · arraste à direita para olhar · F ir até o próximo ser vivo · T acelerar o tempo'
-    : 'WASD mover · Mouse olhar · Shift correr · Espaço pular · T acelerar o tempo · F ir até o próximo ser vivo · Esc sair'}</p>`;
+    : 'WASD mover · Mouse olhar · Shift correr · Espaço pular · T acelerar o tempo · F ir até o próximo ser vivo · C cultura dos grupos · Esc sair'}</p>`;
 const crosshair = document.createElement('div');
 crosshair.id = 'crosshair';
 const info = document.createElement('div');
@@ -256,6 +258,7 @@ window.addEventListener('keydown', e => {
   keys.add(e.code);
   if (e.code === 'KeyT') alternarTempo();
   if (e.code === 'KeyF') irAoProximo();
+  if (e.code === 'KeyC') alternarCultura();
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 

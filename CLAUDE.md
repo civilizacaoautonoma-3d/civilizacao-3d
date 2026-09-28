@@ -27,6 +27,7 @@ engine/   motor da simulação (Node + TypeScript via tsx, WebSocket na porta 80
   data/mente.jsonl   cada deliberação: situação, resposta, o que foi aplicado/rejeitado, consequência
   src/objetos.ts   objetos do mundo (pedra, graveto, fibra, lasca, pilha, fogo) e as regras materiais escondidas
   src/cavernas.ts  cavernas: perceber, entrar pela boca, dormir, virar "casa" por repetição
+  src/cultura.ts   valores, emoções morais (culpa, indignação), normas percebidas, transmissão, métricas culturais
   src/comunidades.ts segundo grupo: onde nasce, conhecer alguém (só vendo/ouvindo), primeiro contato
   src/partilha.ts  colher para levar, dar comida a quem tem fome, comer o que tem na mão ou deixaram ao lado
   src/vida.ts      ciclo de vida: idade, genes, atração, gravidez, parto, bebê, infância, velhice, febre
@@ -44,6 +45,7 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   src/agentes.ts malhas e poses dos agentes
   src/animais.ts modelos provisórios dos animais e carcaças, animação de patas e poses
   src/painel.ts  painel do agente ou animal na mira (necessidades, emoções, o que sabe e carrega)
+  src/cultura.ts  quadro da cultura (tecla C): palavras, valores e técnicas de cada grupo, divergência
   src/cavernas.ts domo de rocha das cavernas (posição vem de shared/mundo)
   src/objetos.ts pedras, gravetos, fibras, lascas, pilhas e fogo (chama, luz, fumaça); itens nas mãos
   src/arbustos.ts arbustos e frutos
@@ -52,7 +54,7 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 ## Rodar
 - Motor: `cd engine; npm run dev`
 - Visualizador: `cd viewer; npm run dev` (http://localhost:5173)
-- Tecla T (modo dev) alterna a velocidade do tempo no servidor: ×1, ×4, ×15, ×60.
+- Tecla T (modo dev) alterna a velocidade do tempo no servidor: ×1, ×4, ×15, ×60. Tecla C: quadro da cultura dos grupos.
 - Celular na mesma rede: `http://<IP do PC>:5173` (Vite com host: true; liberar portas 5173 e 8080 no firewall).
 - Mente deliberativa (Fase 9): sem chave usa o deliberador de teste. Para o Claude de verdade, antes de `npm run dev`:
   `$env:ANTHROPIC_API_KEY = "..."` (ou `$env:MENTE_LLM = "claude"`). Opções: `MENTE_LLM=claude|teste|desligado`,
@@ -136,6 +138,16 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
   Primeiro contato: surpresa, medo (neuroticismo) ou curiosidade (abertura), confiança baixa, momento marcante para
   o LLM; as palavras de um grupo não significam nada para o outro. Em validação, o contato veio por volta do dia 60-70.
   Bebês mamam com a mãe ou com outra mulher do grupo que esteja amamentando; órfãos são cuidados pelo grupo.
+- Fase 14: valores (partilhar, cautela, cuidado, abertura aos de fora; -1…1) nascem da experiência: receber comida
+  com fome, dar, ver alguém morrer para um bicho, ser atacado, amamentar/cuidar, dicas certas ou erradas de gente
+  de fora. Sem reforço, esfriam devagar; crianças mudam mais depressa. Valores pesam nas decisões (partilhar, cuidar,
+  medo e exploração, primeiro olhar para estranhos). Emoções morais: culpa (com comida na mão, viu alguém querido
+  com muita fome por mais de 1 h e não levou) e indignação (alguém comeu a comida deixada para outro: mágoa e
+  desconfiança). Normas = o que cada um percebe que os seus fazem (dividir, cuidar de órfãos), com conformidade.
+  Transmissão: a criança perto dos pais absorve valores, normas e crenças fortes (origem 'transmitida', com menos
+  certeza). Métricas por grupo (palavra mais usada por conceito, valores médios, técnicas, crenças) e divergência
+  (língua, valores, técnicas, crenças) vão para o validar e para o visualizador (tecla C). O LLM recebe o que o
+  agente valoriza e o que os seus costumam fazer.
 - Rede de segurança: agente querendo andar e parado no mesmo ponto por 1,5 h desiste do alvo e sai para outro lado.
 - Lobo é oportunista com humanos (desiste se a vítima acorda inteira; morde e recua); com bicho perigoso acordado
   por perto ninguém volta a dormir. Javali não investe contra bebês nem crianças pequenas.
@@ -162,7 +174,7 @@ viewer/   visualização 3D (Vite + Three.js), só desenha o que o motor envia
 ## Fases
 Concluídas: 1 (fundação), 2 (motor headless), 3 (mundo 3D), 5 (corpo e sobrevivência), 6 (natureza, ecologia e animais),
 7 (percepção, memória e aprendizado), 8 (emoções e personalidade), 9 (IA deliberativa), 10 (ações primitivas, descoberta,
-construção e cavernas), 11 (relações e protolinguagem), 12 (ciclo de vida e gerações), 13 (duas comunidades) — todas validadas
+construção e cavernas), 11 (relações e protolinguagem), 12 (ciclo de vida e gerações), 13 (duas comunidades), 14 (cultura, valores e evolução) — todas validadas
 agentes vivos o ano todo. A Fase 9 foi validada com o deliberador de teste; com o Claude de verdade ainda não (precisa de chave).
 Próximas sugeridas: 4 (Blender), teste da mente com o Claude de verdade, fases seguintes da documentação.
 Pendências: javalis ainda investem contra adultos com frequência (mataram uma mãe na validação da Fase 13);

@@ -18,6 +18,7 @@ import { descreverMao, descreverTecnicas } from './tecnicas';
 import { descreverRelacao, melhorPalavra, traduzir } from './social';
 import { crescimento, descreverFase } from './vida';
 import { fundarGrupo, lugarParaNovoGrupo, NOME_GRUPO } from './comunidades';
+import { medirCultura } from './cultura';
 
 export const TICKS_POR_SEGUNDO = 10;
 export const DT = 1 / TICKS_POR_SEGUNDO;
@@ -355,6 +356,7 @@ const agenteParaRede = (a: Agente, ctxObj: { objetos: Objeto[]; hora: number; ag
   geracao: a.vida.geracao,
   comunidade: a.comunidade,
   pele: r2(a.vida.genes.pele),
+  valores: Object.fromEntries(Object.entries(a.cultura.valores).map(([k, v]) => [k, r2(v)])),
   fala: a.social.fala && ctxObj.hora - a.social.fala.quando < 0.25
     ? { texto: a.social.fala.palavras.join(' '), traducao: a.social.fala.conceitos.map(c => traduzir(c, ctxObj)).join(' ') } : null,
   relacoes: Object.entries(a.social.relacoes).map(([id, r]) => ({
@@ -451,6 +453,12 @@ const objetoParaRede = (o: Objeto, hora: number): ObjetoRede => {
   return r;
 };
 
+function culturaParaRede(e: Estado) {
+  const c = medirCultura(e.agentes);
+  const conceitos = new Set(c.grupos.flatMap(g => Object.keys(g.palavras)));
+  return { ...c, traducao: Object.fromEntries([...conceitos].map(k => [k, traduzir(k, e)])) };
+}
+
 export function retrato(e: Estado, msMundo: number, velocidade: number): MsgEstado {
   const hora = horaDoMundo(msMundo);
   // a lista de objetos é grande: só vai quando mudou ou a cada 2 s (para quem acabou de conectar)
@@ -459,6 +467,7 @@ export function retrato(e: Estado, msMundo: number, velocidade: number): MsgEsta
   return {
     tipo: 'estado', tick: e.tick, msMundo, velocidade,
     ...(mandarObjetos ? { objetos: e.objetos.map(o => objetoParaRede(o, hora)) } : {}),
+    ...(e.tick % 50 === 0 ? { cultura: culturaParaRede(e) } : {}),
     entidades: e.agentes.map(a => agenteParaRede(a, { objetos: e.objetos, hora, agentes: e.agentes })),
     animais: e.animais.map(an => animalParaRede(an, hora)),
     carcacas: e.carcacas.map(k => carcacaParaRede(k, hora)),

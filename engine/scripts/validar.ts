@@ -10,6 +10,7 @@ import { DT, censo, horaDoMundo, migrar, mundoNovo, passoDoMundo } from '../src/
 import { configurarMente, type RegistroDeliberacao } from '../src/deliberacao';
 import { provedorTeste } from '../src/provedores';
 import { descreverRelacao, melhorPalavra, traduzir } from '../src/social';
+import { medirCultura } from '../src/cultura';
 
 const dias = Number(process.argv.slice(2).find((a, i, v) => /^\d+$/.test(a) && v[i - 1] !== '--desde') ?? 30);
 const tudo = process.argv.includes('--tudo');
@@ -39,7 +40,7 @@ function registrar(t: string) {
   contagem.set(tipo, (contagem.get(tipo) ?? 0) + 1);
   if (t.startsWith('Censo')) return;
   const deAgente = !!quem;
-  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio|palavra em comum|Nasceu|como um par|PRIMEIRO CONTATO|não é do seu grupo|voz que não conhecia/.test(t)) console.log(`  [${carimbo()}] ${t}`);
+  if (tudo || (deAgente && !rotina.test(t)) || /chegou de fora|matilha|deixou|descobriu:|aprendeu com|raio|palavra em comum|Nasceu|como um par|PRIMEIRO CONTATO|não é do seu grupo|voz que não conhecia|culpa|indignado|aprendeu com .* a acreditar/.test(t)) console.log(`  [${carimbo()}] ${t}`);
 }
 
 const inicio = performance.now();
@@ -92,6 +93,15 @@ for (const g of e.grupos) {
   console.log(`  grupo ${g.numero}: ${membros.filter(a => a.vivo).length} vivos de ${membros.length} (${membros.map(a => a.nome + (a.vivo ? '' : '†')).join(', ')})`);
 }
 console.log(`  contatos entre grupos: ${e.contatos.length}${e.contatos[0] ? ` · o primeiro no dia ${Math.floor(e.contatos[0].quando / 24) + 1}: ${e.contatos[0].quem} viu ${e.contatos[0].viu}` : ' · nenhum'}`);
+const cult = medirCultura(e.agentes);
+console.log('\nCultura (Fase 14):');
+for (const g of cult.grupos) {
+  console.log(`  grupo ${g.numero}: valores ${Object.entries(g.valores).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+  console.log(`    palavras: ${Object.entries(g.palavras).filter(([k]) => !k.startsWith('pessoa:')).map(([k, w]) => `${traduzir(k, e)}="${w}"`).join(' ')}`);
+  console.log(`    técnicas: ${g.tecnicas.join(', ') || 'nenhuma'} · crenças fortes: ${g.crencas.length}`);
+}
+if (cult.divergencia) console.log(`  divergência: língua ${cult.divergencia.lingua} · valores ${cult.divergencia.valores} · técnicas ${cult.divergencia.tecnicas} · crenças ${cult.divergencia.crencas}`);
+console.log(`  culpas: ${e.agentes.reduce((s, a) => s + a.cultura.culpas, 0)} · indignações: ${e.agentes.reduce((s, a) => s + a.cultura.indignacoes, 0)} · crenças transmitidas: ${e.agentes.reduce((s, a) => s + a.mente.crencas.filter(c => c.origem === 'transmitida').length, 0)}`);
 console.log('\nÁrvore genealógica (Fase 12):');
 const dia = (h: number) => Math.floor(h / 24) + 1;
 for (const p of e.genealogia) {

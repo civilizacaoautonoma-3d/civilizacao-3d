@@ -23,8 +23,9 @@ export function conhecer(a: Agente, o: Agente, ctx: Contexto, como: 'viu' | 'ouv
   if (a.comunidade === o.comunidade) return;
   // alguém de fora do seu grupo: nunca tinha visto ninguém assim
   const P = a.personalidade;
-  r.confianca = 0.12;
-  r.medo = Math.min(1, Math.max(0, 0.15 + 0.35 * P.neuroticismo - 0.2 * P.coragem));
+  const abertura = a.cultura?.valores.abertura ?? 0;
+  r.confianca = Math.max(0.02, 0.12 + 0.12 * abertura);
+  r.medo = Math.min(1, Math.max(0, 0.15 + 0.35 * P.neuroticismo - 0.2 * P.coragem - 0.15 * abertura));
   sinta(a, 'surpresa', 0.8);
   sinta(a, 'medo', 0.2 + 0.5 * r.medo);
   if (P.abertura > 0.5) sinta(a, 'antecipacao', 0.3 + 0.4 * P.abertura);   // curiosidade

@@ -13,6 +13,7 @@ import { fogosPerto } from './objetos';
 import { pertoDaAgua } from './espaco';
 import { atualizarAtracao, ehBebe, ehCrianca, formamPar, idadeDias } from './vida';
 import { conhece, conhecer } from './comunidades';
+import { aoConferirDica, transmitir } from './cultura';
 
 export interface Relacao {
   afeto: number; confianca: number; respeito: number; medo: number; ressentimento: number; divida: number;
@@ -233,6 +234,7 @@ function conferirDicas(a: Agente, ctx: Contexto) {
         : d.conceito === 'fogo' ? fogosPerto(ctx.objetos, d.x, d.z, 6).length > 0 : null;
     } else if (ctx.hora > d.ate) return false;
     if (resultado === null) return true;
+    aoConferirDica(a, ctx, de, resultado);
     if (resultado) {
       a.social.contagem.dicasCertas++;
       mudarRelacao(a, de, { confianca: 0.08, divida: 0.05, afeto: 0.03 });
@@ -296,6 +298,7 @@ export function pulsoSocial(a: Agente, ctx: Contexto, horas: number) {
     if (a.sentimentos.humor.solidao > 0.5 && d > 12 && r.afeto > 0.05) falar(a, ctx, [`pessoa:${o.id}`, 'vem'], null);
   }
   conferirDicas(a, ctx);
+  transmitir(a, ctx, horas);
   if (a.social.chamadoPor && ctx.hora > a.social.chamadoPor.ate) a.social.chamadoPor = null;
 }
 
